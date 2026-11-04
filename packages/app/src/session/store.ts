@@ -9,6 +9,7 @@ import {
   SessionDiagnosticsSchema,
   SessionTurnRecordSchema,
   TriggerAttemptRecordSchema,
+  WakeRecordSchema,
   type AgentLoopExitRecord,
   type ConversationSessionState,
   type MessageWindow,
@@ -17,7 +18,8 @@ import {
   type SessionJournalRecord,
   type SessionDiagnostics,
   type SessionTurnRecord,
-  type TriggerAttemptRecord
+  type TriggerAttemptRecord,
+  type WakeRecord
 } from "./schemas";
 import {
   sanitizeSessionMemoryValue,
@@ -65,6 +67,7 @@ export interface CreateSessionStoreOptions {
   onTriggerAttemptRecorded?: (attempt: TriggerAttemptRecord) => void;
   onTurnRecorded?: (turn: SessionTurnRecord) => void;
   onLoopExitRecorded?: (exit: AgentLoopExitRecord) => void;
+  onWakeRecorded?: (wake: WakeRecord) => void;
 }
 
 export interface ExportSessionDiagnosticsOptions {
@@ -93,6 +96,8 @@ export interface SessionStore {
   recordTriggerAttempt(attempt: TriggerAttemptRecord): Promise<void>;
   recordTurn(turn: SessionTurnRecord): Promise<void>;
   recordLoopExit(exit: AgentLoopExitRecord): Promise<void>;
+  recordWake(wake: WakeRecord): Promise<void>;
+  listConversations(): Conversation[];
   pinConversation(conversation: Conversation): void;
   unpinConversation(conversation: Conversation): void;
   getConversationState(
@@ -112,6 +117,7 @@ export function createInMemorySessionStore(
 ): SessionStore {
   const conversations = new Map<string, ConversationEntry>();
   const conversationPinCounts = new Map<string, number>();
+  const wakes: WakeRecord[] = [];
   const now = options.now ?? (() => new Date());
   const createId = options.createId ?? randomUUID;
   const limits = resolveLimits(options.limits);
@@ -291,6 +297,26 @@ export function createInMemorySessionStore(
       });
     },
 
+    recordWake(wake) {
+      return enqueueMutation(async () => {
+        const parsedWake = WakeRecordSchema.parse(wake);
+        await emitJournalRecord({
+          type: "wake",
+          recordedAt: parsedWake.endedAt,
+          record: parsedWake
+        });
+        appendBounded(wakes, parsedWake, limits.lifecycleRecordsPerConversation);
+        options.onWakeRecorded?.(parsedWake);
+      });
+    },
+
+    listConversations() {
+      return Array.from(
+        conversations.values(),
+        ({ state }) => state.conversation
+      );
+    },
+
     pinConversation(conversation) {
       const key = getConversationKey(conversation);
       conversationPinCounts.set(key, (conversationPinCounts.get(key) ?? 0) + 1);
@@ -334,7 +360,8 @@ export function createInMemorySessionStore(
         exportedAt: exportOptions.exportedAt ?? now().toISOString(),
         conversations: Array.from(conversations.values(), ({ state }) =>
           toSafeConversationState(state)
-        )
+        ),
+        wakes
       });
     }
   };

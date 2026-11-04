@@ -7,50 +7,42 @@ import {
   InMemoryFs,
   decodeBytesToUtf8,
   defineCommand,
-  type ExecResult
+  type CustomCommand,
+  type ExecResult,
+  type IFileSystem
 } from "just-bash";
-import type {
-  ToolHandlerResult,
-  ToolImplementation
-} from "./executeActions";
-import { createPhaseBash } from "./bash";
+import {
+  createPhaseBash,
+  type BashCommandResult,
+  type PhaseBash
+} from "./bash";
 
 export interface NativeCommandTarget {
   executable: string;
   argsPrefix?: readonly string[];
 }
 
-export interface CreateActionBashToolOptions {
+export interface CreateActionBashToolScopeOptions {
   agentBrowserTarget?: NativeCommandTarget;
-}
-
-export interface CreateActionBashToolScopeOptions
-  extends CreateActionBashToolOptions {
   namespace: string;
   sessionId: string;
   provider?: string;
   configPath?: string;
   cleanupTimeoutMs?: number;
+  fs?: IFileSystem;
+  customCommands?: CustomCommand[];
+  /** Dreams have no network, so their shell has no browser. */
+  browser?: boolean;
 }
 
 export interface ActionBashToolScope {
-  implementation: ToolImplementation;
+  exec(command: string, signal?: AbortSignal): Promise<BashCommandResult>;
   dispose(): Promise<ExecResult>;
 }
 
 /**
- * Creates the active-loop bash implementation. Its VFS is private to that
- * loop, and agent-browser is the only native host command added to just-bash.
- */
-export function createActionBashToolImplementation(
-  options: CreateActionBashToolOptions = {}
-): ToolImplementation {
-  return createActionBashRuntime(options).implementation;
-}
-
-/**
- * Creates a bash implementation whose browser namespace and session are owned
- * by one active loop. dispose() is idempotent and closes only that session.
+ * Creates a bash whose browser namespace and session are owned by one wake.
+ * dispose() is idempotent and closes only that session.
  */
 export function createActionBashToolScope(
   options: CreateActionBashToolScopeOptions
@@ -65,7 +57,7 @@ export function createActionBashToolScope(
   let disposePromise: Promise<ExecResult> | undefined;
 
   return {
-    implementation: runtime.implementation,
+    exec: (command, signal) => runtime.bash.exec(command, signal),
     dispose() {
       disposePromise ??= runtime.wasAgentBrowserInvoked()
         ? closeAgentBrowserSession({
@@ -90,17 +82,10 @@ export function createActionBashToolScope(
   };
 }
 
-interface CreateActionBashRuntimeOptions extends CreateActionBashToolOptions {
-  namespace?: string;
-  sessionId?: string;
-  provider?: string;
-  configPath?: string;
-}
-
 function createActionBashRuntime(
-  options: CreateActionBashRuntimeOptions
+  options: CreateActionBashToolScopeOptions
 ): {
-  implementation: ToolImplementation;
+  bash: PhaseBash;
   agentBrowserTarget: NativeCommandTarget;
   wasAgentBrowserInvoked(): boolean;
 } {
@@ -108,58 +93,42 @@ function createActionBashRuntime(
     options.agentBrowserTarget ?? resolveAgentBrowserTarget();
   let agentBrowserInvoked = false;
   const bash = createPhaseBash({
-    fs: new InMemoryFs(),
+    fs: options.fs ?? new InMemoryFs(),
     cwd: "/",
     customCommands: [
-      defineCommand("agent-browser", (args, context) => {
-        agentBrowserInvoked = true;
-        return executeNativeCommand(
-          agentBrowserTarget,
-          options.namespace && options.sessionId
-            ? bindRuntimeOwnedSession(
-                args,
-                options.namespace,
-                options.sessionId,
-                {
-                  ...(options.provider
-                    ? { provider: options.provider }
-                    : {}),
-                  ...(options.configPath
-                    ? { configPath: options.configPath }
-                    : {})
-                }
-              )
-            : args,
-          decodeBytesToUtf8(context.stdin),
-          context.signal
-        );
-      })
+      ...(options.customCommands ?? []),
+      ...(options.browser === false
+        ? []
+        : [
+            defineCommand("agent-browser", (args, context) => {
+              agentBrowserInvoked = true;
+              return executeNativeCommand(
+                agentBrowserTarget,
+                bindRuntimeOwnedSession(
+                  args,
+                  options.namespace,
+                  options.sessionId,
+                  {
+                    ...(options.provider
+                      ? { provider: options.provider }
+                      : {}),
+                    ...(options.configPath
+                      ? { configPath: options.configPath }
+                      : {})
+                  }
+                ),
+                decodeBytesToUtf8(context.stdin),
+                context.signal
+              );
+            })
+          ])
     ]
   });
 
   return {
+    bash,
     agentBrowserTarget,
-    wasAgentBrowserInvoked: () => agentBrowserInvoked,
-    implementation: async (
-      proposal,
-      context
-    ): Promise<ToolHandlerResult> => {
-      if (proposal.toolName !== "bash") {
-        return {
-          status: "failed",
-          reason: `bash handler received ${proposal.toolName}.`
-        };
-      }
-
-      const result = await bash.exec(proposal.params.command, context.signal);
-      return {
-        status: result.exitCode === 0 ? "executed" : "failed",
-        result: {
-          ok: result.exitCode === 0,
-          data: result
-        }
-      };
-    }
+    wasAgentBrowserInvoked: () => agentBrowserInvoked
   };
 }
 

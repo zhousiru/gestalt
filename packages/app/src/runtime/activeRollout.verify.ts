@@ -45,7 +45,7 @@ try {
       temperature: 0,
       stepNumber: 0,
       messages: initialMessages,
-      tools: ["send_group_message"],
+      tools: ["say"],
       requestBody: { image: Buffer.from([1, 2, 3]) }
     },
     response: {
@@ -61,7 +61,7 @@ try {
   const inlineTool: ActionProposal = {
     id: "inline-tool-1",
     proposedAt: now().toISOString(),
-    toolName: "fetch_message",
+    toolName: "look",
     params: { messageId: "quoted-message-1" }
   };
   await rollout.recordToolStarted(inlineTool, false);
@@ -90,7 +90,7 @@ try {
         assistant,
         { role: "user", content: "steer" }
       ],
-      tools: ["send_group_message"]
+      tools: ["say"]
     },
     status: "cancelled",
     startedAt: now().toISOString(),
@@ -111,7 +111,7 @@ try {
         { role: "user", content: "steer" },
         { role: "user", content: "retry" }
       ],
-      tools: ["send_group_message"]
+      tools: ["say"]
     },
     response: {
       messages: [{ role: "assistant", content: "committed-after-retry" }],
@@ -125,8 +125,8 @@ try {
   const proposal: ActionProposal = {
     id: "action-1",
     proposedAt: now().toISOString(),
-    toolName: "send_group_message",
-    params: { groupId: "g1", text: "hello" }
+    toolName: "say",
+    params: { conversation: { kind: "group", id: "g1" }, text: "hello" }
   };
   await rollout.recordToolStarted(proposal, true);
   await rollout.recordToolFinished(
@@ -142,8 +142,11 @@ try {
   const unknownProposal: ActionProposal = {
     id: "action-unknown",
     proposedAt: now().toISOString(),
-    toolName: "send_group_message",
-    params: { groupId: "g1", text: "possibly sent" }
+    toolName: "say",
+    params: {
+      conversation: { kind: "group", id: "g1" },
+      text: "possibly sent"
+    }
   };
   await rollout.recordToolStarted(unknownProposal, true);
   await rollout.recordToolFinished(

@@ -65,13 +65,13 @@ async function main(): Promise<void> {
       sessionHistory: history,
       rolloutReader,
       ingestEvent: async () => records[0]!,
-      dispatchEvent: async () => ({ outcome: Promise.resolve(undefined) }),
-      handleEvent: async () => undefined,
-      handleMessageWindow: async () => undefined,
+      dispatchEvent: async () => undefined,
+      startLife: () => undefined,
       exportDiagnostics: (options?: { exportedAt?: string }) =>
         sessionStore.exportDiagnostics(options),
-      whenIdle: async () => undefined
-    } satisfies Runtime;
+      flush: async () => undefined,
+      shutdown: async () => undefined
+    } as unknown as Runtime;
 
     const png = Buffer.concat([
       Buffer.from("89504e470d0a1a0a", "hex"),

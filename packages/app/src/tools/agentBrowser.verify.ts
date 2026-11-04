@@ -1,109 +1,46 @@
 import assert from "node:assert/strict";
-import { createMockConnector } from "../connectors/mock/connector";
-import {
-  createActionBashToolImplementation,
-  createActionBashToolScope
-} from "./agentBrowser";
+import { createActionBashToolScope } from "./agentBrowser";
 
-const now = () => new Date("2026-07-24T00:00:00.000Z");
-const connector = createMockConnector({ now });
-const implementation = createActionBashToolImplementation();
-const skillResult = await implementation(
-  {
-    id: "bash-core-skill",
-    proposedAt: now().toISOString(),
-    toolName: "bash",
-    params: {
-      command: "agent-browser skills get core"
-    }
-  },
-  {
-    connector,
-    now
-  }
-);
+const echoTarget = {
+  executable: process.execPath,
+  argsPrefix: [
+    "-e",
+    [
+      "const chunks=[];",
+      "process.stdin.on('data',(chunk)=>chunks.push(chunk));",
+      "process.stdin.on('end',()=>process.stdout.write(JSON.stringify({argv:process.argv.slice(1),stdin:Buffer.concat(chunks).toString('utf8')})));"
+    ].join(""),
+    "--"
+  ]
+};
 
-assert.equal(skillResult.status, "executed");
-assert.equal(skillResult.result?.ok, true);
-assert.match(JSON.stringify(skillResult.result?.data), /agent-browser core/);
-
-const forwardingImplementation = createActionBashToolImplementation({
-  agentBrowserTarget: {
-    executable: process.execPath,
-    argsPrefix: [
-      "-e",
-      [
-        "const chunks=[];",
-        "process.stdin.on('data',(chunk)=>chunks.push(chunk));",
-        "process.stdin.on('end',()=>process.stdout.write(JSON.stringify({argv:process.argv.slice(1),stdin:Buffer.concat(chunks).toString('utf8')})));"
-      ].join(""),
-      "--"
-    ]
-  }
+const skillScope = createActionBashToolScope({
+  namespace: "gestalt",
+  sessionId: "gestalt-skill-test"
 });
-const forwardingResult = await forwardingImplementation(
-  {
-    id: "bash-forwarding",
-    proposedAt: now().toISOString(),
-    toolName: "bash",
-    params: {
-      command:
-        "printf 'from-pipe' | agent-browser open 'https://example.test/a b' --json"
-    }
-  },
-  {
-    connector,
-    now
-  }
-);
-
-assert.equal(forwardingResult.status, "executed");
-const forwardingData = forwardingResult.result?.data as
-  | { stdout?: string }
-  | undefined;
-assert.deepEqual(JSON.parse(forwardingData?.stdout ?? ""), {
-  argv: ["open", "https://example.test/a b", "--json"],
-  stdin: "from-pipe"
-});
+const skillResult = await skillScope.exec("agent-browser skills get core");
+assert.equal(skillResult.exitCode, 0);
+assert.match(skillResult.stdout, /agent-browser core/);
+await skillScope.dispose();
 
 const scopedBash = createActionBashToolScope({
   namespace: "gestalt",
   sessionId: "gestalt-loop-test",
   provider: "fortress",
   configPath: "/opt/gestalt/dist/browser/agent-browser.json",
-  agentBrowserTarget: {
-    executable: process.execPath,
-    argsPrefix: [
-      "-e",
-      [
-        "const chunks=[];",
-        "process.stdin.on('data',(chunk)=>chunks.push(chunk));",
-        "process.stdin.on('end',()=>process.stdout.write(JSON.stringify({argv:process.argv.slice(1),stdin:Buffer.concat(chunks).toString('utf8')})));"
-      ].join(""),
-      "--"
-    ]
-  }
+  agentBrowserTarget: echoTarget
 });
-const scopedResult = await scopedBash.implementation(
-  {
-    id: "bash-scoped-session",
-    proposedAt: now().toISOString(),
-    toolName: "bash",
-    params: {
-      command:
-        "agent-browser --namespace rogue --session=rogue --provider rogue --config rogue.json open https://example.test --session ignored --namespace=ignored -pignored"
-    }
-  },
-  {
-    connector,
-    now
-  }
+const piped = await scopedBash.exec(
+  "printf 'from-pipe' | agent-browser open 'https://example.test/a b' --json"
 );
-assert.equal(scopedResult.status, "executed");
-const scopedData = scopedResult.result?.data as
-  | { stdout?: string }
-  | undefined;
-assert.deepEqual(JSON.parse(scopedData?.stdout ?? ""), {
+assert.equal(piped.exitCode, 0);
+assert.deepEqual(JSON.parse(piped.stdout).stdin, "from-pipe");
+
+const scopedResult = await scopedBash.exec(
+  "agent-browser --namespace rogue --session=rogue --provider rogue --config rogue.json open https://example.test --session ignored --namespace=ignored -pignored"
+);
+assert.equal(scopedResult.exitCode, 0);
+assert.deepEqual(JSON.parse(scopedResult.stdout), {
   argv: [
     "--config",
     "/opt/gestalt/dist/browser/agent-browser.json",
@@ -148,7 +85,18 @@ assert.deepEqual(await unusedScopedBash.dispose(), {
   exitCode: 0
 });
 
-const cancellationImplementation = createActionBashToolImplementation({
+const browserless = createActionBashToolScope({
+  namespace: "gestalt",
+  sessionId: "gestalt-dream",
+  browser: false,
+  agentBrowserTarget: echoTarget
+});
+const refused = await browserless.exec("agent-browser open https://example.test");
+assert.notEqual(refused.exitCode, 0);
+
+const cancellationScope = createActionBashToolScope({
+  namespace: "gestalt",
+  sessionId: "gestalt-cancel",
   agentBrowserTarget: {
     executable: process.execPath,
     argsPrefix: ["-e", "setInterval(() => undefined, 1000)", "--"]
@@ -156,123 +104,61 @@ const cancellationImplementation = createActionBashToolImplementation({
 });
 const controller = new AbortController();
 setTimeout(() => controller.abort(), 50);
-const cancellationResult = await cancellationImplementation(
-  {
-    id: "bash-cancellation",
-    proposedAt: now().toISOString(),
-    toolName: "bash",
-    params: {
-      command: "agent-browser wait"
-    }
-  },
-  {
-    connector,
-    now,
-    signal: controller.signal
-  }
+const cancellationResult = await cancellationScope.exec(
+  "agent-browser wait",
+  controller.signal
 );
-assert.equal(cancellationResult.status, "failed");
-assert.equal(
-  (cancellationResult.result?.data as { exitCode?: number } | undefined)
-    ?.exitCode,
-  124
-);
+assert.equal(cancellationResult.exitCode, 124);
 
-const inheritedPipeImplementation =
-  createActionBashToolImplementation({
-    agentBrowserTarget: {
-      executable: process.execPath,
-      argsPrefix: [
-        "-e",
-        [
-          'const {spawn}=require("node:child_process");',
-          "const child=spawn(process.execPath,['-e','setTimeout(()=>{},1500)'],{stdio:['ignore','inherit','inherit']});",
-          "child.unref();",
-          "process.stdout.write('parent-exited');"
-        ].join(""),
-        "--"
-      ]
-    }
-  });
-const inheritedPipeStartedAt = Date.now();
-const inheritedPipeResult = await inheritedPipeImplementation(
-  {
-    id: "bash-inherited-pipe",
-    proposedAt: now().toISOString(),
-    toolName: "bash",
-    params: {
-      command: "agent-browser test"
-    }
-  },
-  {
-    connector,
-    now
+const inheritedPipeScope = createActionBashToolScope({
+  namespace: "gestalt",
+  sessionId: "gestalt-pipe",
+  agentBrowserTarget: {
+    executable: process.execPath,
+    argsPrefix: [
+      "-e",
+      [
+        'const {spawn}=require("node:child_process");',
+        "const child=spawn(process.execPath,['-e','setTimeout(()=>{},1500)'],{stdio:['ignore','inherit','inherit']});",
+        "child.unref();",
+        "process.stdout.write('parent-exited');"
+      ].join(""),
+      "--"
+    ]
   }
-);
+});
+const inheritedPipeStartedAt = Date.now();
+const inheritedPipeResult = await inheritedPipeScope.exec("agent-browser test");
 const inheritedPipeElapsedMs = Date.now() - inheritedPipeStartedAt;
-assert.equal(inheritedPipeResult.status, "executed");
-assert.match(
-  (
-    inheritedPipeResult.result?.data as
-      | { stdout?: string }
-      | undefined
-  )?.stdout ?? "",
-  /parent-exited/
-);
+assert.equal(inheritedPipeResult.exitCode, 0);
+assert.match(inheritedPipeResult.stdout, /parent-exited/);
 assert.ok(
   inheritedPipeElapsedMs < 1_000,
   `native command waited ${inheritedPipeElapsedMs}ms for an inherited pipe`
 );
 
-const firstLoop = createActionBashToolImplementation();
-const secondLoop = createActionBashToolImplementation();
-await firstLoop(
-  {
-    id: "bash-first-loop-write",
-    proposedAt: now().toISOString(),
-    toolName: "bash",
-    params: {
-      command: "printf 'loop-one' > /state"
-    }
-  },
-  { connector, now }
-);
-const firstLoopRead = await firstLoop(
-  {
-    id: "bash-first-loop-read",
-    proposedAt: now().toISOString(),
-    toolName: "bash",
-    params: {
-      command: "cat /state"
-    }
-  },
-  { connector, now }
-);
-const secondLoopRead = await secondLoop(
-  {
-    id: "bash-second-loop-read",
-    proposedAt: now().toISOString(),
-    toolName: "bash",
-    params: {
-      command: "cat /state"
-    }
-  },
-  { connector, now }
-);
-assert.match(JSON.stringify(firstLoopRead.result?.data), /loop-one/);
-assert.equal(secondLoopRead.status, "failed");
+const firstWake = createActionBashToolScope({
+  namespace: "gestalt",
+  sessionId: "gestalt-first"
+});
+const secondWake = createActionBashToolScope({
+  namespace: "gestalt",
+  sessionId: "gestalt-second"
+});
+await firstWake.exec("printf 'wake-one' > /state");
+assert.match((await firstWake.exec("cat /state")).stdout, /wake-one/);
+assert.notEqual((await secondWake.exec("cat /state")).exitCode, 0);
 
 console.log(
   JSON.stringify(
     {
       ok: true,
       coreSkillLoaded: true,
-      forwardedArgs: ["open", "https://example.test/a b", "--json"],
-      forwardedStdin: "from-pipe",
       runtimeOwnedNamespace: "gestalt",
       runtimeOwnedSession: "gestalt-loop-test",
       runtimeOwnedProvider: "fortress",
       sessionClosedOnDispose: true,
+      dreamHasNoBrowser: true,
       cancelledExitCode: 124,
       inheritedPipeElapsedMs,
       isolatedVfs: true

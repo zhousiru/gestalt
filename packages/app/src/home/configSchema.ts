@@ -11,13 +11,6 @@ const nonEmptyString = z.string().trim().min(1);
 const clearableString = z.string().transform((value) => value.trim());
 const positiveInteger = z.number().int().positive();
 const nonNegativeInteger = z.number().int().nonnegative();
-const positiveNumber = z.number().finite().min(1);
-const probability = z
-  .number()
-  .finite()
-  .refine((value) => value >= 0 && value <= 1, {
-    message: "must be between 0 and 1"
-  });
 const id = z.union([nonEmptyString, nonNegativeInteger]);
 const toolChoice = z.union([
   z.enum(["required", "auto", "none"]),
@@ -30,9 +23,6 @@ const routingSort = z.union([
 ]);
 const timezone = nonEmptyString.refine(isValidTimezone, {
   message: "must be a valid IANA timezone"
-});
-const regex = clearableString.refine(isValidRegex, {
-  message: "must be a valid JavaScript regular expression"
 });
 
 function languageModelFields(
@@ -88,8 +78,6 @@ export const gestaltConfigSchema = z
 
     sticker_scraping_enabled: z.boolean().optional(),
     sticker_processing_concurrency: z.number().int().min(1).max(32).optional(),
-    sticker_recommendation_probability: probability.optional(),
-    sticker_recommendation_limit: z.number().int().min(1).max(20).optional(),
     operator_user_ids: z.array(id).optional(),
 
     timezone: timezone.optional(),
@@ -98,29 +86,20 @@ export const gestaltConfigSchema = z
     session_recent_history_hours: positiveInteger.optional(),
     context_recent_message_count: nonNegativeInteger.max(500).optional(),
     trace_binary_capture_enabled: z.boolean().optional(),
-    dreaming_enabled: z.boolean().optional(),
-
-    trigger_enabled: z.boolean().optional(),
-    trigger_mention_enabled: z.boolean().optional(),
-    trigger_mention_probability: probability.optional(),
-    trigger_keyword_names: clearableString.optional(),
-    trigger_keyword_regex: regex.optional(),
-    trigger_keyword_probability: probability.optional(),
-    trigger_activity_enabled: z.boolean().optional(),
-    trigger_activity_probability: probability.optional(),
-    trigger_activity_window_ms: positiveInteger.optional(),
-    trigger_activity_min_messages: positiveInteger.optional(),
-    trigger_icebreaker_enabled: z.boolean().optional(),
-    trigger_icebreaker_probability: probability.optional(),
-    trigger_icebreaker_quiet_ms: positiveInteger.optional(),
-
-    agent_loop_aggregation_delay_ms: positiveInteger.optional(),
-    agent_loop_aggregation_max_delay_ms: positiveInteger.optional(),
-    agent_loop_aggregation_backoff_multiplier: positiveNumber.optional(),
-    agent_loop_exit_say_nothing_enabled: z.boolean().optional(),
-    agent_loop_exit_say_nothing_count: positiveInteger.optional(),
-    agent_loop_exit_idle_enabled: z.boolean().optional(),
-    agent_loop_exit_idle_ms: positiveInteger.optional()
+    life_daily_token_budget: positiveInteger.optional(),
+    life_day_start_hour: z.number().int().min(0).max(23).optional(),
+    life_min_sleep_seconds: positiveInteger.optional(),
+    life_max_sleep_seconds: positiveInteger.optional(),
+    life_default_sleep_seconds: positiveInteger.optional(),
+    life_dream_interval_hours: positiveInteger.optional(),
+    life_typing_ms_per_char: nonNegativeInteger.optional(),
+    life_typing_min_ms: nonNegativeInteger.optional(),
+    life_typing_max_ms: nonNegativeInteger.optional(),
+    life_unread_limit: positiveInteger.optional(),
+    life_wake_max_steps: positiveInteger.optional(),
+    life_dream_max_steps: positiveInteger.optional(),
+    life_me_max_bytes: positiveInteger.optional(),
+    life_place_max_bytes: positiveInteger.optional()
   })
   .superRefine((config, context) => {
     for (const prefix of [
@@ -138,14 +117,13 @@ export const gestaltConfigSchema = z
         });
       }
     }
-    const delay = config.agent_loop_aggregation_delay_ms;
-    const maxDelay = config.agent_loop_aggregation_max_delay_ms;
-    if (delay !== undefined && maxDelay !== undefined && maxDelay < delay) {
+    const minSleep = config.life_min_sleep_seconds;
+    const maxSleep = config.life_max_sleep_seconds;
+    if (minSleep !== undefined && maxSleep !== undefined && maxSleep < minSleep) {
       context.addIssue({
         code: "custom",
-        path: ["agent_loop_aggregation_max_delay_ms"],
-        message:
-          "must be greater than or equal to agent_loop_aggregation_delay_ms"
+        path: ["life_max_sleep_seconds"],
+        message: "must be greater than or equal to life_min_sleep_seconds"
       });
     }
   });
@@ -184,18 +162,6 @@ function formatIssue(issue: ZodIssue): string {
 function isValidTimezone(value: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isValidRegex(value: string): boolean {
-  if (!value) {
-    return true;
-  }
-  try {
-    new RegExp(value, "i");
     return true;
   } catch {
     return false;

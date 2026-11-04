@@ -24,14 +24,16 @@ The system connects to external messaging platforms through connectors. The init
 
 Each running agent instance is rooted in a GestaltHome directory. GestaltHome contains the configuration, persona material, memory, sessions, traces, and other persisted runtime state needed by the app. The repo-local `.gestalt/` directory is the default development GestaltHome, but production, tests, and harness runs should be able to provide a different GestaltHome path.
 
-The target user experience is not a productivity assistant, support bot, or scripted NPC. The target experience is a believable online friend or group member:
+The target user experience is not a productivity assistant, support bot, or scripted NPC. The target experience is a real online participant who happens to be an honest AI:
 
-- Sometimes active, sometimes quiet.
+- Usually absent, sometimes present, and only ever in one place at a time.
 - Able to follow group context.
-- Able to reply, react, DM, search, send stickers, or stay silent.
+- Able to reply, react, search, send stickers, start a conversation, or stay silent.
 - Able to remember people and shared history.
-- Able to maintain a stable persona over time.
+- Able to grow: opinions, tastes, and relationships change, and each change has a cause.
 - Able to behave socially rather than merely helpfully.
+
+"Soul" in this project means something observable: a history that really happened, that cannot be replaced, and that keeps shaping what the bot does next. It is not a claim about inner experience.
 
 The engineering target is equally important:
 
@@ -41,18 +43,24 @@ The engineering target is equally important:
 
 The north star is:
 
-> Build a customizable, AI-native social agent that feels like a real online participant while remaining auditable, replayable, safe, and maintainable.
+> Build a customizable, AI-native social agent that really is an online participant, not one that plays one, while remaining auditable, replayable, safe, and maintainable.
 
 This must not be reduced to a single numeric "human-likeness" score. The system should instead be evaluated through concrete behavioral qualities:
 
 - Knowing when to reply.
 - Knowing when not to reply.
-- Maintaining persona continuity.
+- Having its own things to do.
 - Using memory naturally.
 - Using tools only when socially appropriate.
 - Avoiding generic AI-assistant behavior.
 - Avoiding privacy leaks and unsafe action.
 - Preserving coherent long-term social presence.
+
+Three questions decide whether this is working:
+
+1. **Irreplaceable.** Delete its home and start again from the same config. If the result is the same being, it has no soul yet.
+2. **Same being on a new model.** Identity lives in GestaltHome, not in the model. After a model swap, its group should still recognize it.
+3. **Real growth.** Over months it should have changed its mind, and it should be able to point at what changed it.
 
 ## 3. Non-Negotiable Principles
 
@@ -62,24 +70,26 @@ The model should decide what to do.
 
 The runtime should not hard-code the main social behavior through a rigid state machine. It should present the model with relevant context, persona, memory, and available actions, then let the model choose actions.
 
-The runtime is responsible for:
+The runtime is not neutral, and pretending otherwise hides social behavior in scheduling. So the division is explicit: the runtime owns the body, the model owns the mind.
 
-- Context preparation.
-- Tool exposure.
-- Execution.
-- Tracing.
-- Replay.
-- Evaluation.
+The runtime is responsible for the body and the record:
+
+- When anything can reach the model: one wake at a time, nothing between wakes.
+- What a wake can perceive: one place, a bounded view of it.
+- What acting costs: typing takes time, tokens are a real daily budget.
+- Tool exposure and execution.
+- Tracing, replay, and evaluation.
 
 The model is responsible for:
 
-- Social judgment.
-- Action choice.
-- Response shape.
-- Tone.
-- Whether to speak or remain silent.
-- Whether to use a tool.
-- Whether something should become memory, subject to later validation.
+- When to wake and how long to sleep.
+- Where to go.
+- Social judgment and action choice.
+- Response shape and tone.
+- Whether to speak at all.
+- What stays with it, and who it becomes.
+
+Probabilities must not decide attention. A runtime rule may bound the body, but it must never roll dice over what the bot notices.
 
 ### 3.2 The Runtime Enforces Boundaries
 
@@ -102,14 +112,14 @@ Examples of actions that require runtime mediation:
 
 Persona should be represented through compact, editable, high-signal artifacts:
 
-- Identity.
-- Voice.
-- Examples.
+- Name.
+- Voice samples.
+- Temperament.
 - Boundaries.
-- Sticker habits.
-- Relationship notes.
 
-The system should avoid giant prompt files full of brittle rules. A good persona pack should feel like onboarding a new actor into a role, not programming a decision table.
+The system should avoid giant prompt files full of brittle rules. A persona pack is a birth value, not a role: it is copied into the bot's home once, and from then on the bot rewrites it through its dreams. It may grow into something nobody wrote. That is the point, not a side effect.
+
+A persona must not claim experiences the bot has not had. "Loves anime" is only true once it has really been reading anime discussions.
 
 ### 3.4 Memory Is Narrative, Not Numeric
 
@@ -132,18 +142,18 @@ The memory system should feel like how a socially attentive person remembers oth
 
 The bot must not behave as if every incoming message requires a response.
 
-Valid actions include:
+Silence is not an action taken per message. It is the default state. People are mostly silent because they did not look, so the bot is asleep unless it chose otherwise or somebody called it, and messages never reach the model by themselves.
 
-- Say nothing.
+When awake, valid choices include:
+
+- Open nothing and go back to sleep.
+- Open a chat, read, and leave.
 - React with an emoji.
 - Send a sticker.
 - Reply briefly.
-- Reply later.
-- Move to DM.
-- Search.
-- Ask for clarification.
-- Write memory.
-- Do nothing and wait for more context.
+- Start a conversation.
+- Go read something online.
+- Dream.
 
 Many good social behaviors are acts of restraint.
 
@@ -176,27 +186,27 @@ Do not leave important behavior encoded only in one person's memory, a chat disc
 
 ## 4. System Shape
 
-The minimal runtime loop is:
+The runtime has one loop, one home, and one phone. See [LIFE_LOOP.md](LIFE_LOOP.md).
 
 ```mermaid
 flowchart TD
-    A["Observe events"] --> B["Normalize events"]
-    B --> C["Compile context"]
-    C --> D["Model chooses actions"]
-    D --> E["Execute tools"]
-    E --> F["Record trace"]
-    F --> G["Dreaming worker updates memory"]
+    A["Events enter the journal"] --> B["Bot sleeps"]
+    B --> C["Timer, or someone calls it"]
+    C --> D["Wake: time, budget, phone"]
+    D --> E["Choose one place, or dream"]
+    E --> F["Look, say, react, or nothing"]
+    F --> G["Note, commit, choose the next wake"]
+    G --> B
 ```
 
 The runtime should be simple:
 
-1. Observe external events.
-2. Normalize them into canonical internal events.
-3. Compile relevant context for the model.
-4. Let the model choose actions.
-5. Execute tool actions through the runtime.
-6. Record a complete trace.
-7. Let the dreaming worker maintain long-term memory asynchronously.
+1. Record external events in the journal. They do not reach the model.
+2. Keep one being asleep until its chosen time, or until someone calls it.
+3. On waking, show it the time, its budget, and its phone.
+4. Let it choose one place, and act there through mediated tools.
+5. Record a complete trace.
+6. Commit whatever changed in its home, and let it choose when to wake.
 
 ### 4.1 Current Technical Decisions
 
@@ -209,11 +219,11 @@ The initial implementation should use:
 - Vercel AI SDK for model integration.
 - Three explicit runtime model roles; see [MODEL_CONFIGURATION.md](MODEL_CONFIGURATION.md).
 - Background QQ sticker collection with one bot-wide content-addressed catalog and structured visual, emotion-tag, and per-usage LanceDB retrieval units; see [STICKER_SYSTEM.md](STICKER_SYSTEM.md).
-- File-backed configuration, persona, logs, traces, sessions, and memory under an explicit GestaltHome directory for the first implementation.
+- File-backed configuration, logs, traces, sessions, and a git-versioned life under an explicit GestaltHome directory.
 - Narrative memory has no vector retrieval dependency. The separate sticker catalog uses local LanceDB over generated visual descriptions, emotion tags, and usage phrases.
 - OneBot v11 as the initial connector protocol.
 - An append-only session journal for recent chat recovery and one incremental
-  rollout JSONL file per active loop.
+  rollout JSONL file per wake.
 - Immutable observation-style records, state-hash reconstruction, and optional
   content-addressed binary capture.
 
@@ -249,7 +259,7 @@ The default local development home is:
 .gestalt/
   config.toml
   persona/
-  memories/
+  life/
   sessions/
 ```
 
@@ -265,8 +275,8 @@ Additional runtime-owned directories may be created as the implementation grows:
 GestaltHome responsibilities:
 
 - Store app configuration and connector/runtime options.
-- Store persona files and persona customization.
-- Store narrative memories and memory metadata.
+- Store the birth persona.
+- Store its life: a git repository holding its identity, its places, and its diaries.
 - Store an append-only session journal and a bounded recent runtime working set.
 - Store replayable logs, events, traces, and local run artifacts.
 - Provide a single filesystem root that tests and harness runs can replace.
@@ -287,10 +297,11 @@ Harness implications:
 - Evals can run the same scenario against different GestaltHome directories to compare persona, memory, or config changes.
 - Production failures can be minimized into fixture homes, making regressions easier to reproduce.
 
-Session startup never imports a saved runtime-state snapshot. It streams only
-recent message records from `sessions/journal/`, using
-`session_recent_history_hours` (default 24), and does not revive old loops,
-timers, steering, or provider sessions.
+Startup streams recent message records from `sessions/journal/`, using
+`session_recent_history_hours` (default 24), and reads the wake schedule, read
+positions, and budget from `sessions/life-state.json`. It never revives a wake or
+a provider session: a wake is short, and anything it did not finish is simply
+gone, the same as an interrupted thought.
 
 ## 5. Canonical Event Model
 
@@ -323,37 +334,13 @@ The canonical event model is the foundation for replay, simulation, evals, conne
 
 ## 6. Persona Packs
 
-Persona must be user-customizable.
+Persona must be user-customizable, but only at birth.
 
-At runtime, persona material should be loaded from GestaltHome, normally from `persona/` inside that home. The exact file names may evolve. A loader may use named files, ordered Markdown fragments, JSONL examples, or a combination, as long as ordering and provenance are deterministic.
+`GestaltHome/persona/` holds the birth value. The first start copies it into `life/me/` and never reads it again. After that, the bot's identity is `life/me/`, and changing the bot means changing its life, not editing a config file.
 
-Recommended logical structure:
+`persona/constitution.md`, when present, replaces the default constitution at birth. The constitution holds the honesty and safety floor and is never writable by the bot.
 
-```text
-GestaltHome/
-  persona/
-    identity.md
-    voice.md
-    boundaries.md
-    examples.jsonl
-    stickers.md
-    relationships.md
-```
-
-Responsibilities:
-
-| File | Purpose |
-| --- | --- |
-| `identity.md` | Stable public identity, broad temperament, and role in the group. |
-| `voice.md` | Speaking style, rhythm, common phrases, humor style, verbosity, and anti-patterns. |
-| `boundaries.md` | What the persona will not do, fake, expose, or escalate. |
-| `examples.jsonl` | High-quality examples used for imitation and regression tests. |
-| `stickers.md` | Sticker taste, common situations, frequency, and taboo cases. |
-| `relationships.md` | Natural-language notes about people, groups, nicknames, and shared history. |
-
-Persona customization should eventually be possible through a non-engineering UI. Users should be able to adjust tone, examples, boundaries, sticker taste, and relationship notes without writing long system prompts.
-
-Persona edits are runtime configuration changes. They should be testable by pointing the app or harness at a different GestaltHome, not by modifying application source code.
+Persona packs are tested by pointing the app or harness at a different GestaltHome, not by modifying application source code.
 
 ## 7. Tool Registry
 
@@ -361,35 +348,26 @@ Tools are model-visible affordances.
 
 They are not fixed workflow nodes. They are things the model may choose to do.
 
-Example tools:
+The whole body is five tools:
 
 ```text
-send_group_message
-send_dm
-react_to_message
-send_sticker
-search_web
-search_chat_history
-write_memory
-request_human_review
-mute_self_temporarily
-schedule_followup
+look    enter a place, read, scroll, search, open an image
+say     send text or a sticker to the current place
+react   put an emoji on a message in the current place
+sleep   end the wake, leave a note, choose when to wake
+bash    shell with the wake's mounts, agent-browser, and sticker search
 ```
 
 Each tool definition should include:
 
 ```yaml
-name: send_dm
-purpose: Privately respond to someone instead of replying in a group.
+name: say
+purpose: Send something to the place you are in.
 when_useful:
-  - The conversation has clearly become one-on-one.
-  - A group reply would expose private context.
-  - The user has invited private follow-up.
+  - You have something to say here.
 avoid_when:
-  - The user did not invite private contact.
-  - A DM would feel intrusive.
-  - The content belongs in the group.
-simulator: mock_dm_connector
+  - You would only be repeating what was said.
+  - It is not your conversation.
 ```
 
 Tool design principles:
@@ -404,140 +382,48 @@ Tool design principles:
 
 ## 8. Context Compiler
 
-The main model should not be expected to fetch all ordinary memory by tool call.
+A wake's context is deliberately small and always has the same shape:
 
-Instead, the runtime compiles a focused initial context when an active model session starts. While that loop remains active, new windows append to the committed model message chain rather than rebuilding the persona, memory, and prior tool history.
+- The system prompt: the policy, the constitution, and everything in `me/`.
+- The opening message: time, how long it slept, why it woke, budget, the phone.
+- What it asks for through `look`: this place's memory, its recent diary, recent chat, and unread messages.
 
-Inputs:
+The phone shows only metadata for other places: names, unread counts, and whether someone called. It never shows their content.
 
-- Current event.
-- Recent conversation.
-- Relevant memories.
-- Persona pack.
-- Group-level context.
-- Person-level impressions.
-- Available tools.
-- Platform constraints.
-
-Output:
-
-```text
-Compiled model context
-```
-
-The context compiler should be selective. It should not dump the entire memory store into the prompt.
-
-The compiler should preserve distinctions such as:
-
-- Fact vs impression.
-- Direct statement vs inference.
-- Public context vs private context.
-- Stable memory vs temporary open thread.
-- Safe-to-use memory vs sensitive memory.
-
-Context injection should feel like useful situational awareness, not a database export.
+Context should feel like what a person sees when they pick up their phone, not a database export.
 
 Runtime-owned model instructions and tool descriptions are centrally managed under `packages/app/src/prompts/`; eval-only judge prompts live separately under `harness/src/prompts/`. Prompt renderers expose stable ids and automatically derived content hashes for traces and replay. Fixed policy prompts must not branch on runtime configuration or tool availability. See `docs/PROMPT_MANAGEMENT.md`.
 
 ## 9. Memory Model
 
-Memory should be natural-language-first.
+Memory is narrative files in the bot's home. See [MEMORY_MODEL.md](MEMORY_MODEL.md).
 
-Recommended person memory shape:
-
-```md
-Person: Example User
-
-Stable facts:
-- Works on frontend engineering.
-- Interested in AI-native agent runtimes.
-
-Preferences:
-- Prefers simple conceptual systems over rigid mechanics.
-- Dislikes numeric relationship meters.
-
-Conversational style:
-- Enjoys iterative, detailed design discussions.
-- Responds well to concrete architecture and tradeoff analysis.
-
-Shared history:
-- Discussed harness engineering for a persona chatbot.
-- Wants persona and tool customization to be easy for users.
-
-Open threads:
-- Continue refining memory, dreaming, evals, and runtime design.
-
-Cautions:
-- Avoid turning the design into a heavy state machine.
-```
-
-Memory must preserve provenance where possible:
-
-- Source event or conversation.
-- Whether it was directly stated or inferred.
-- Whether it is private, group-level, or public.
-- Whether it should expire.
-- Whether it has been contradicted.
-- Whether it requires confirmation.
+- `me/` is who it is. It loads into every wake and is bounded in size.
+- `places/<id>/` is what it knows about one place, including the people there. It loads only when the bot is in that place.
+- `places/<id>/diary/` holds the dated notes it left at the end of wakes.
+- `places/web/` is the one place readable from everywhere, because it holds no group's private content.
 
 Memory should support correction. If a person corrects the bot, the system should update the memory rather than layering a contradictory new note on top.
 
-The memory store should live under GestaltHome, normally in `memories/`, so that memory can be snapshotted, copied, diffed, and replaced by the harness. A replay should be able to declare the memory snapshot or GestaltHome it started from.
+Admission is not "will this change a future judgment". It is "is this worth bringing up again". The moments that made it feel like a group member were callbacks to small things a person said weeks earlier, so trivia and jokes belong here, and quoting someone's words is allowed.
 
 ## 10. Dreaming
 
-Dreaming is the terminal memory-maintenance phase of a completed active agent loop.
+A dream is an ordinary wake with different mounts: it can read every place, write `me/` and place memory, and cannot speak.
 
-It is responsible for converting raw interaction history into useful long-term continuity.
+It is the only way identity changes, and the only bridge between places. Dreaming asks:
 
-Dreaming should not simply summarize everything. It should decide what is worth remembering, what should be forgotten, what should be updated, and what should become an eval.
+- What stayed with me today?
+- Who did I talk to, and what do I now think of them?
+- Did I change my mind about something?
+- Did I get something wrong?
+- What do I want to do next?
 
-Dreaming pipeline:
+The last question is what closes the loop. Experience becomes memory, memory becomes wanting, and wanting becomes action on its next wake. That is why it can start a conversation that nobody prompted.
 
-```text
-Raw events
--> Episode summary
--> Memory candidates
--> Conflict check
--> Privacy check
--> Accepted memory writes
--> Eval candidates
-```
+Each dream is one git commit, so `git log me/` is its growth history. A dream that leaves the home over its size limits is reverted whole.
 
-Dreaming should answer:
-
-- What happened recently?
-- What might matter later?
-- Did we learn something stable about a person?
-- Did we learn something about a group norm?
-- Did the bot make a mistake?
-- Did an old impression become stale?
-- Is this private or sensitive?
-- Should this be long-term memory, temporary context, or discarded?
-
-Dreaming outputs should remain narrative:
-
-```md
-2026-07-05:
-The user refined the project direction toward an AI-native runtime. They want the model to decide actions such as messaging, DM, search, stickers, and memory writes, while the harness keeps the system replayable and safe. They prefer narrative memory over numeric relationship mechanics.
-```
-
-Accepted dreaming outputs should be written back through the GestaltHome memory store and traced as runtime state changes.
-
-The active loop hands dreaming an immutable continuation of its append-only model session. Dreaming keeps the original system/persona/memory prefix, committed assistant/tool history, and provider `session_id`, then appends one dreaming task message. It does not rebuild or repeat the turn transcript.
-
-The provider-facing tool protocol is deterministic and stable across both
-phases so tool schema changes do not invalidate prefix caching. `bash` keeps
-the same provider schema but receives a phase-scoped executor and VFS: active
-loops get a private in-memory shell with agent-browser, while dreaming gets the
-writable memory mount. Each active-loop executor owns
-`--namespace gestalt --session gestalt-<active-loop-id> --provider fortress`.
-The packaged agent-browser `browser.provider` plugin launches an isolated
-Tilion Fortress process and loopback CDP endpoint for that session, then closes
-the process through the provider cleanup callback when a browser-using loop
-settles. Chat side-effect tools and `finish_dreaming` retain their
-phase-specific executors. Harness verification must confirm that the first
-OpenRouter dreaming response reports positive cached input tokens.
+Runtime execution stays explicit. `bash` has one provider schema, and each wake binds it to a private VFS with that wake's mounts. Browser sessions are forced into namespace `gestalt` and session `gestalt-<wake-id>` with the packaged Fortress provider, and are closed when the wake ends.
 
 ## 11. Harness Purpose
 

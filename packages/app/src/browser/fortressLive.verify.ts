@@ -11,7 +11,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket, { type RawData } from "ws";
-import { createMockConnector } from "../connectors/mock/connector";
 import {
   createActionBashToolScope,
   type ActionBashToolScope
@@ -304,8 +303,6 @@ async function openAgentBrowserBridge(input: {
     configPath,
     cleanupTimeoutMs: 15_000
   });
-  const now = () => new Date();
-  const connector = createMockConnector({ now });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   const summary: AgentBrowserBridgeSummary = {
@@ -318,71 +315,31 @@ async function openAgentBrowserBridge(input: {
 
   try {
     logProgress("launching Fortress through agent-browser");
-    const opened = await scope.implementation(
-      {
-        id: "fortress-live-open",
-        proposedAt: now().toISOString(),
-        toolName: "bash",
-        params: {
-          command: "agent-browser open --json"
-        }
-      },
-      {
-        connector,
-        now,
-        signal: controller.signal
-      }
+    const opened = await scope.exec(
+      "agent-browser open --json",
+      controller.signal
     );
-    assert.equal(opened.status, "executed");
+    assert.equal(opened.exitCode, 0);
     summary.opened = true;
     logProgress("agent-browser launch returned");
 
     logProgress("reading a page title through agent-browser");
-    const title = await scope.implementation(
-      {
-        id: "fortress-live-title",
-        proposedAt: now().toISOString(),
-        toolName: "bash",
-        params: {
-          command:
-            "agent-browser eval 'document.title=\"Gestalt Live Bridge\"; document.title' --json"
-        }
-      },
-      {
-        connector,
-        now,
-        signal: controller.signal
-      }
+    const title = await scope.exec(
+      "agent-browser eval 'document.title=\"Gestalt Live Bridge\"; document.title' --json",
+      controller.signal
     );
-    assert.equal(title.status, "executed");
-    const titleData = title.result?.data as
-      | { stdout?: string }
-      | undefined;
-    assert.match(titleData?.stdout ?? "", /Gestalt Live Bridge/);
+    assert.equal(title.exitCode, 0);
+    assert.match(title.stdout, /Gestalt Live Bridge/);
     summary.titleRead = true;
     logProgress("agent-browser page evaluation returned");
 
     logProgress("reading CDP URL through agent-browser");
-    const cdpResult = await scope.implementation(
-      {
-        id: "fortress-live-cdp",
-        proposedAt: now().toISOString(),
-        toolName: "bash",
-        params: {
-          command: "agent-browser get cdp-url --json"
-        }
-      },
-      {
-        connector,
-        now,
-        signal: controller.signal
-      }
+    const cdpResult = await scope.exec(
+      "agent-browser get cdp-url --json",
+      controller.signal
     );
-    assert.equal(cdpResult.status, "executed");
-    const cdpData = cdpResult.result?.data as
-      | { stdout?: string }
-      | undefined;
-    const cdpPayload = JSON.parse(cdpData?.stdout ?? "") as unknown;
+    assert.equal(cdpResult.exitCode, 0);
+    const cdpPayload = JSON.parse(cdpResult.stdout) as unknown;
     const cdpUrl = findWebSocketUrl(cdpPayload);
     assert.ok(cdpUrl, "agent-browser did not return a CDP WebSocket URL.");
     summary.cdpRead = true;

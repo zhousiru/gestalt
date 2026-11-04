@@ -301,9 +301,11 @@ async function readRolloutCandidate(
       ? { failureReason: finished.reason }
       : {}),
     ...(first.eventId ? { eventId: first.eventId } : {}),
-    ...(first.conversationKey
-      ? { conversationKey: first.conversationKey }
-      : {}),
+    ...(finished?.type === "rollout_finished"
+      ? conversationKeyOf(first, finished)
+      : first.conversationKey
+        ? { conversationKey: first.conversationKey }
+        : {}),
     ...(first.name ? { name: first.name } : {}),
     ...derived.counts,
     byteLength: info.size
@@ -401,6 +403,21 @@ function assertStoredCounts(
   }
 }
 
+/** A wake starts without a place, so the terminal record names where it went. */
+function conversationKeyOf(
+  started: RolloutStartedRecord,
+  finished: Extract<RolloutRecord, { type: "rollout_finished" }>
+): { conversationKey?: string } {
+  const metadata = finished.metadata as
+    | { conversationKey?: unknown }
+    | undefined;
+  const conversationKey =
+    typeof metadata?.conversationKey === "string"
+      ? metadata.conversationKey
+      : started.conversationKey;
+  return conversationKey ? { conversationKey } : {};
+}
+
 function summaryFromBoundary(
   started: RolloutStartedRecord,
   finished: Extract<RolloutRecord, { type: "rollout_finished" }>,
@@ -414,9 +431,7 @@ function summaryFromBoundary(
     status: finished.status,
     ...(finished.reason ? { failureReason: finished.reason } : {}),
     ...(started.eventId ? { eventId: started.eventId } : {}),
-    ...(started.conversationKey
-      ? { conversationKey: started.conversationKey }
-      : {}),
+    ...conversationKeyOf(started, finished),
     ...(started.name ? { name: started.name } : {}),
     ...finished.summary,
     byteLength

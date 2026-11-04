@@ -1,60 +1,35 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
-  hasToolCall,
   ToolLoopAgent,
   stepCountIs,
   tool,
   type LanguageModel,
-  type ModelMessage,
   type ToolSet
 } from "ai";
 import { z } from "zod";
-import type { CompiledContext } from "../context/compileContext";
-import type { MessageReceivedEvent } from "../events/schemas";
 import type { GestaltConfig } from "../home/loadConfig";
 import { sanitizeUntrustedValue } from "../privacy/stickerRedaction";
 import {
   ACTION_TOOL_PROMPTS,
   hashModelToolPrompts,
-  renderActionSystemPrompt,
   renderActionToolDescription,
-  renderActionWindowPrompt,
-  type PromptMetadata,
-  type RenderedPrompt
+  type PromptMetadata
 } from "../prompts";
-import {
-  readTurnAbortError,
-  throwIfTurnSteered,
-  TurnSteeredError
-} from "../runtime/turnSignals";
-import {
-  executeActions,
-  type ToolExecutionResult
-} from "../tools/executeActions";
-import {
-  ActionProposalSchema,
-  type ActionProposal,
-  type ToolDefinition
-} from "../tools/schemas";
+import type { ToolDefinition } from "../tools/schemas";
 import {
   attachModelStepsToError,
-  type ModelActionResult,
-  type ModelClient,
+  readUsageTotals,
   type CreateModelSessionOptions,
+  type ImageAttachment,
+  type ModelClient,
   type ModelExchangeSink,
-  type ModelRunOptions,
   type ModelRequestTraceSnapshot,
   type ModelResponseTraceSnapshot,
   type ModelSession,
-  type ModelSessionContinuation,
-  type ModelStepTraceSnapshot
+  type ModelStepTraceSnapshot,
+  type ModelUsageTotals
 } from "./session";
-import {
-  buildTerminalDreamingTools,
-  dreamingToolOrder
-} from "./dreamingTools";
-import { createModelBashTool } from "./bashTool";
 import {
   readLanguageMaxSteps,
   readLanguagePromptCacheEnabled,
@@ -67,7 +42,6 @@ import {
   type ModelToolChoiceMode,
   type ResolvedLanguageModelConfig
 } from "./modelConfig";
-import { readImageContentForModel } from "./readImageContent";
 
 export {
   resolveEmbeddingModelConfig,
@@ -220,361 +194,172 @@ function createAiSdkModelSession(
     toolChoice,
     exchangeSink
   } = sessionOptions;
-  const sessionId = randomUUID();
-  const providerOptions = createModelSessionProviderOptions(
-    options.providerOptions,
-    providerName,
-    sessionId,
-    options.promptCacheEnabled ?? false,
-    options.promptCacheTtl
-  );
-  const modelStepRecorder = createModelStepRecorder(now);
-  const pendingExchangeRequests: Array<{
-    exchangeId: string;
-    request: ModelRequestSnapshot;
-    startedAt: string;
-    revision: number;
-  }> = [];
-  const committedToolResults: ToolExecutionResult[] = [];
-  let instructions: string | undefined;
-  let sessionPrompt: RenderedPrompt | undefined;
-  let messages: ModelMessage[] = [];
-  const pendingSteerMessages: ModelMessage[] = [];
-  let currentContext: CompiledContext | undefined;
-  let attemptController: AbortController | undefined;
-  let steerRevision = 0;
-  let initialized = false;
-  let running = false;
 
   return {
-    get initialized() {
-      return initialized;
-    },
-    get running() {
-      return running;
-    },
+    async run(input) {
+      const providerOptions = createModelSessionProviderOptions(
+        options.providerOptions,
+        providerName,
+        input.providerSessionId,
+        options.promptCacheEnabled ?? false,
+        options.promptCacheTtl
+      );
+      const stepRecorder = createModelStepRecorder(now);
+      const pendingExchanges: Array<{
+        exchangeId: string;
+        request: ModelRequestSnapshot;
+        startedAt: string;
+      }> = [];
+      const pendingImages: ImageAttachment[] = [];
+      const usage: ModelUsageTotals = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedTokens: 0
+      };
+      let stopRequested = false;
+      let toolTail: Promise<unknown> = Promise.resolve();
 
-    async run(context, runOptions = {}) {
-      if (running) {
-        throw new Error("Model session is already running.");
-      }
-      throwIfTurnSteered(runOptions.signal);
-      // These arrays are diagnostics for one public run, not session history.
-      // Provider messages retain the committed prefix separately, so carrying
-      // old step/tool snapshots across later turns only grows memory and makes
-      // the returned per-run result misleading. Steer retries stay inside this
-      // run and therefore keep accumulating below.
-      modelStepRecorder.steps.length = 0;
-      committedToolResults.length = 0;
-      pendingExchangeRequests.length = 0;
-      currentContext = context;
-      if (!initialized) {
-        sessionPrompt = renderActionSystemPrompt({
-          persona: context.persona,
-          memories: context.memories
+      // Models may emit several tool calls in one step. A life happens in order,
+      // so they run one after another, and nothing runs after sleep.
+      const execute = (
+        toolName: ToolDefinition["name"],
+        args: Record<string, unknown>
+      ): Promise<unknown> => {
+        const result = toolTail.then(async () => {
+          if (stopRequested) {
+            return { status: "skipped", reason: "You are already asleep." };
+          }
+          const outcome = await input.execute(toolName, args);
+          if (outcome.images) {
+            pendingImages.push(...outcome.images);
+          }
+          if (outcome.stop) {
+            stopRequested = true;
+          }
+          return outcome.output;
         });
-        instructions = sessionPrompt.content;
-        messages.push({
-          role: "user",
-          content: renderActionWindowPrompt(context.transcript).content
-        });
-        initialized = true;
-      } else {
-        messages.push({
-          role: "user",
-          content: renderActionWindowPrompt(context.transcript).content
-        });
-      }
+        toolTail = result.catch(() => undefined);
+        return result;
+      };
 
-      const runStepOffset = modelStepRecorder.steps.length;
-      const runToolOffset = committedToolResults.length;
-      running = true;
+      const prompt: PromptMetadata = {
+        id: input.instructions.id,
+        contentHash: input.instructions.contentHash,
+        toolPromptHash: hashModelToolPrompts(
+          input.tools.map((candidate) => candidate.name)
+        )
+      };
+      const agent = new ToolLoopAgent({
+        id: "gestalt-wake",
+        model: options.languageModel,
+        instructions: input.instructions.content,
+        tools: buildLifeTools(input.tools, execute),
+        ...(toolChoice !== undefined ? { toolChoice } : {}),
+        toolOrder: input.tools.map((candidate) => candidate.name),
+        ...(providerOptions ? { providerOptions } : {}),
+        stopWhen: [
+          () => stopRequested,
+          stepCountIs(Math.min(input.maxSteps, maxSteps))
+        ],
+        temperature,
+        prepareStep({ messages: stepMessages }) {
+          if (pendingImages.length === 0) {
+            return undefined;
+          }
+          const images = pendingImages.splice(0, pendingImages.length);
+          return {
+            messages: [
+              ...stepMessages,
+              {
+                role: "user",
+                content: images.flatMap((image) => [
+                  { type: "text" as const, text: image.label },
+                  {
+                    type: "file" as const,
+                    data: image.data,
+                    mediaType: image.mediaType
+                  }
+                ])
+              }
+            ]
+          };
+        },
+        include: {
+          requestBody: true,
+          requestMessages: true,
+          responseBody: true
+        },
+        async onStepStart(event) {
+          const request = snapshotStepRequest(event, {
+            providerName,
+            modelName: options.modelName,
+            temperature,
+            sessionId: input.providerSessionId,
+            promptCacheEnabled: options.promptCacheEnabled ?? false,
+            prompt
+          });
+          const exchangeId = randomUUID();
+          const startedAt = now().toISOString();
+          stepRecorder.recordRequest(request);
+          pendingExchanges.push({ exchangeId, request, startedAt });
+          await exchangeSink?.onStepStarted({
+            exchangeId,
+            purpose: input.purpose(),
+            request,
+            startedAt
+          });
+          options.onRequest?.(request);
+        },
+        async onStepEnd(step) {
+          const response = snapshotStepResponse({
+            ...step,
+            responseMessages: step.response.messages
+          });
+          stepRecorder.recordResponse(response);
+          const stepUsage = readUsageTotals(response.usage);
+          usage.inputTokens += stepUsage.inputTokens;
+          usage.outputTokens += stepUsage.outputTokens;
+          usage.cachedTokens += stepUsage.cachedTokens;
+          const exchange = pendingExchanges.shift();
+          if (exchange) {
+            await exchangeSink?.onStepCompleted({
+              exchangeId: exchange.exchangeId,
+              purpose: input.purpose(),
+              request: exchange.request,
+              response,
+              status: "completed",
+              startedAt: exchange.startedAt,
+              endedAt: now().toISOString()
+            });
+          }
+          options.onResponse?.(response);
+        }
+      });
 
       try {
-        while (true) {
-          if (pendingSteerMessages.length > 0) {
-            messages.push(
-              ...pendingSteerMessages.splice(0, pendingSteerMessages.length)
-            );
-          }
-          const controller = new AbortController();
-          attemptController = controller;
-          const removeExternalAbort = forwardAbortSignal(
-            runOptions.signal,
-            controller
-          );
-          const attemptToolResults: ToolExecutionResult[] = [];
-          const pendingImageContents: PendingImageContent[] = [];
-          let committedAttemptTools = 0;
-          const attemptContext = currentContext;
-          const attemptRevision = steerRevision;
-          const attemptSessionPrompt = sessionPrompt;
-          if (!attemptContext || !instructions || !attemptSessionPrompt) {
-            throw new Error("AI SDK model session was not initialized.");
-          }
-          const attemptRunOptions: ModelRunOptions = {
-            ...runOptions,
-            signal: controller.signal
-          };
-          const tools = buildActionTools(attemptContext.tools, {
-            context: attemptContext,
-            now,
-            runOptions: attemptRunOptions,
-            executedToolResults: attemptToolResults,
-            pendingImageContents
+        await agent.generate({
+          messages: [{ role: "user", content: input.opening.content }],
+          timeout: { totalMs: timeoutMs },
+          ...(input.signal ? { abortSignal: input.signal } : {})
+        });
+      } catch (error) {
+        const endedAt = now().toISOString();
+        for (const exchange of pendingExchanges.splice(0)) {
+          await exchangeSink?.onStepCompleted({
+            exchangeId: exchange.exchangeId,
+            purpose: input.purpose(),
+            request: exchange.request,
+            status: input.signal?.aborted ? "cancelled" : "failed",
+            startedAt: exchange.startedAt,
+            endedAt
           });
-          Object.assign(tools, buildTerminalDreamingTools());
-          runOptions.onModelAttemptStart?.();
-
-          const agent = new ToolLoopAgent({
-            id: "gestalt-action-decision",
-            model: options.languageModel,
-            instructions,
-            tools,
-            ...(toolChoice !== undefined ? { toolChoice } : {}),
-            toolOrder: [
-              ...attemptContext.tools.map((candidate) => candidate.name),
-              ...dreamingToolOrder
-            ],
-            ...(providerOptions ? { providerOptions } : {}),
-            stopWhen: [
-              hasToolCall("say_nothing"),
-              hasToolCall("leave"),
-              () =>
-                attemptToolResults.some(
-                  (result) => result.status === "result_unknown"
-                ),
-              stepCountIs(maxSteps)
-            ],
-            temperature,
-            prepareStep({ messages: stepMessages }) {
-              if (pendingImageContents.length === 0) {
-                return undefined;
-              }
-              const images = pendingImageContents.splice(
-                0,
-                pendingImageContents.length
-              );
-              return {
-                messages: [
-                  ...stepMessages,
-                  {
-                    role: "user",
-                    content: images.flatMap((image) => [
-                      {
-                        type: "text" as const,
-                        text: `Image content returned by read_image for file ${JSON.stringify(image.file)}.`
-                      },
-                      {
-                        type: "file" as const,
-                        data: image.data,
-                        mediaType: image.mediaType
-                      }
-                    ])
-                  }
-                ]
-              };
-            },
-            include: {
-              requestBody: true,
-              requestMessages: true,
-              responseBody: true
-            },
-            async onStepStart(event) {
-              const request = snapshotStepRequest(event, {
-                providerName,
-                modelName: options.modelName,
-                temperature,
-                sessionId,
-                promptCacheEnabled: options.promptCacheEnabled ?? false,
-                prompt: {
-                  id: attemptSessionPrompt.id,
-                  contentHash: attemptSessionPrompt.contentHash,
-                  toolPromptHash: hashModelToolPrompts(
-                    attemptContext.tools.map((candidate) => candidate.name)
-                  )
-                }
-              });
-              const exchangeId = randomUUID();
-              const startedAt = now().toISOString();
-              modelStepRecorder.recordRequest(request);
-              pendingExchangeRequests.push({
-                exchangeId,
-                request,
-                startedAt,
-                revision: attemptRevision
-              });
-              await exchangeSink?.onStepStarted({
-                exchangeId,
-                purpose: "agent_action",
-                request,
-                startedAt
-              });
-              options.onRequest?.(request);
-            },
-            async onStepEnd(step) {
-              const wasSteered =
-                steerRevision !== attemptRevision ||
-                (controller.signal.aborted && !runOptions.signal?.aborted);
-              if (!wasSteered) {
-                const requestMessages = step.request.messages;
-                if (requestMessages) {
-                  messages = [
-                    ...requestMessages,
-                    ...step.response.messages
-                  ] as ModelMessage[];
-                }
-                committedToolResults.push(
-                  ...attemptToolResults.slice(committedAttemptTools)
-                );
-                committedAttemptTools = attemptToolResults.length;
-              }
-              const response = snapshotStepResponse({
-                ...step,
-                responseMessages: step.response.messages
-              });
-              modelStepRecorder.recordResponse(response);
-              const exchangeIndex = pendingExchangeRequests.findIndex(
-                (candidate) => candidate.revision === attemptRevision
-              );
-              const exchangeRequest =
-                exchangeIndex >= 0
-                  ? pendingExchangeRequests.splice(exchangeIndex, 1)[0]
-                  : undefined;
-              if (exchangeRequest) {
-                await exchangeSink?.onStepCompleted({
-                  exchangeId: exchangeRequest.exchangeId,
-                  purpose: "agent_action",
-                  request: exchangeRequest.request,
-                  response,
-                  status: wasSteered ? "cancelled" : "completed",
-                  startedAt: exchangeRequest.startedAt,
-                  endedAt: now().toISOString()
-                });
-              }
-              options.onResponse?.(response);
-              if (!wasSteered) {
-                await runOptions.onModelStepCommitted?.();
-              }
-            }
-          });
-
-          try {
-            const result = await agent.generate({
-              messages: [...messages],
-              timeout: { totalMs: timeoutMs },
-              abortSignal: controller.signal
-            });
-            // A steer can race with a provider finishing the current step. The
-            // attempt signal, not only the outer turn signal, decides whether
-            // this response is eligible to commit.
-            throwIfTurnSteered(controller.signal);
-            if (steerRevision !== attemptRevision) {
-              throw new TurnSteeredError();
-            }
-            throwIfTurnSteered(runOptions.signal);
-            return collectModelActionResult(
-              result.toolCalls,
-              committedToolResults.slice(runToolOffset),
-              modelStepRecorder.steps.slice(runStepOffset),
-              attemptContext.tools
-            );
-          } catch (error) {
-            const thrownError = controller.signal.aborted
-              ? readTurnAbortError(controller.signal)
-              : error;
-            const unfinishedExchanges = takePendingExchangeRequests(
-              pendingExchangeRequests,
-              attemptRevision
-            );
-            const attemptWasSteered = steerRevision !== attemptRevision;
-            const exchangeStatus =
-              controller.signal.aborted || attemptWasSteered
-                ? "cancelled"
-                : "failed";
-            const endedAt = now().toISOString();
-            for (const exchangeRequest of unfinishedExchanges) {
-              await exchangeSink?.onStepCompleted({
-                exchangeId: exchangeRequest.exchangeId,
-                purpose: "agent_action",
-                request: exchangeRequest.request,
-                status: exchangeStatus,
-                startedAt: exchangeRequest.startedAt,
-                endedAt
-              });
-            }
-            if (attemptWasSteered && !runOptions.signal?.aborted) {
-              continue;
-            }
-            attachModelStepsToError(
-              thrownError,
-              modelStepRecorder.steps.slice(runStepOffset)
-            );
-            throw thrownError;
-          } finally {
-            removeExternalAbort();
-          }
         }
-      } finally {
-        running = false;
-        attemptController = undefined;
+        attachModelStepsToError(error, stepRecorder.steps);
+        throw error;
       }
-    },
-
-    steer(context) {
-      if (!running) {
-        return false;
-      }
-      currentContext = context;
-      steerRevision += 1;
-      pendingSteerMessages.push({
-        role: "user",
-        content: renderActionWindowPrompt(context.transcript).content
-      });
-      attemptController?.abort(new TurnSteeredError());
-      return true;
-    },
-
-    continuation(): ModelSessionContinuation | undefined {
-      if (!initialized || running || !instructions || !sessionPrompt) {
-        return undefined;
-      }
-      return {
-        instructions,
-        prompt: {
-          id: sessionPrompt.id,
-          contentHash: sessionPrompt.contentHash,
-          toolPromptHash: hashModelToolPrompts(
-            (currentContext?.tools ?? []).map((candidate) => candidate.name)
-          )
-        },
-        messages: [...messages],
-        providerSessionId: sessionId,
-        promptCacheEnabled: options.promptCacheEnabled ?? false,
-        actionTools: [...(currentContext?.tools ?? [])],
-        ...(exchangeSink ? { exchangeSink } : {}),
-        ...(options.promptCacheTtl
-          ? { promptCacheTtl: options.promptCacheTtl }
-          : {})
-      };
+      return { steps: stepRecorder.steps, usage };
     }
   };
-}
-
-function takePendingExchangeRequests<T extends { revision: number }>(
-  requests: T[],
-  revision: number
-): T[] {
-  const taken: T[] = [];
-  for (let index = requests.length - 1; index >= 0; index -= 1) {
-    const request = requests[index];
-    if (request?.revision !== revision) {
-      continue;
-    }
-    requests.splice(index, 1);
-    taken.unshift(request);
-  }
-  return taken;
 }
 
 export function createModelStepRecorder(now: () => Date = () => new Date()): {
@@ -965,300 +750,85 @@ function readCacheUsage(usage: unknown): ModelCacheUsageSnapshot | undefined {
   };
 }
 
-export interface ActionToolRuntime {
-  context: CompiledContext;
-  now: () => Date;
-  runOptions: ModelRunOptions;
-  executedToolResults: ToolExecutionResult[];
-  pendingImageContents: PendingImageContent[];
-}
-
-interface PendingImageContent {
-  file: string;
-  data: Uint8Array;
-  mediaType: string;
-}
-
-export function buildActionTools(
-  availableTools: readonly ToolDefinition[],
-  runtime?: ActionToolRuntime
+export function buildLifeTools(
+  definitions: readonly ToolDefinition[],
+  execute?: (
+    toolName: ToolDefinition["name"],
+    args: Record<string, unknown>
+  ) => Promise<unknown>
 ): ToolSet {
   const tools: ToolSet = {};
-  for (const definition of availableTools) {
-    tools[definition.name] = createActionTool(definition, runtime);
+  for (const definition of definitions) {
+    tools[definition.name] = tool({
+      description: renderActionToolDescription(definition.name),
+      inputSchema: toolInputSchema(definition.name) as z.ZodType<
+        Record<string, unknown>
+      >,
+      async execute(input: Record<string, unknown>) {
+        if (!execute) {
+          return { status: "unavailable" };
+        }
+        return execute(definition.name, input);
+      }
+    }) as unknown as ToolSet[string];
   }
   return tools;
 }
 
-function createActionTool(
-  definition: ToolDefinition,
-  runtime?: ActionToolRuntime
-): ToolSet[string] {
-  if (definition.name === "bash") {
-    return createModelBashTool((command) =>
-      executeActionToolInput(definition, { command }, runtime)
-    );
-  }
-
-  if (definition.name === "fetch_message") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
+function toolInputSchema(name: ToolDefinition["name"]) {
+  const parameter = (key: string): string => toolParameterPrompt(name, key);
+  switch (name) {
+    case "look":
+      return z
         .object({
+          place: z.string().min(1).optional().describe(parameter("place")),
+          before: z.string().min(1).optional().describe(parameter("before")),
+          search: z.string().min(1).optional().describe(parameter("search")),
           message_id: z
             .string()
             .min(1)
-            .describe(toolParameterPrompt(definition.name, "message_id")),
-          reason: z
-            .string()
             .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
+            .describe(parameter("message_id")),
+          image: z.string().min(1).optional().describe(parameter("image"))
         })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "read_image") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
+        .strict();
+    case "say":
+      return z
         .object({
-          file: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "file")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
-        })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "send_group_message") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
-        .object({
-          text: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "text")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
-        })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "send_dm") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
-        .object({
-          user_id: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "user_id")),
-          text: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "text")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
-        })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "send_image") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
-        .object({
-          file: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "file")),
-          caption: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "caption")),
-          summary: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "summary")),
-          reply_to_message_id: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reply_to_message_id")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
-        })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "search_sticker") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
-        .object({
-          query: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "query")),
-          limit: z
-            .number()
-            .int()
-            .min(1)
-            .max(20)
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "limit")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
-        })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "send_sticker") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
-        .object({
+          text: z.string().min(1).optional().describe(parameter("text")),
           sticker_id: z
             .string()
             .min(1)
-            .describe(toolParameterPrompt(definition.name, "sticker_id")),
-          reply_to_message_id: z
-            .string()
             .optional()
-            .describe(toolParameterPrompt(definition.name, "reply_to_message_id")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
+            .describe(parameter("sticker_id")),
+          reply_to: z.string().min(1).optional().describe(parameter("reply_to"))
         })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "poke_user") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
+        .strict();
+    case "react":
+      return z
         .object({
-          user_id: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "user_id")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
+          message_id: z.string().min(1).describe(parameter("message_id")),
+          emoji: z.string().min(1).describe(parameter("emoji"))
         })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "recall_own_message") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
+        .strict();
+    case "sleep":
+      return z
         .object({
-          own_message_id: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "own_message_id")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
-        })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
-  }
-
-  if (definition.name === "react_to_message") {
-    return tool({
-      description: renderActionToolDescription(definition.name),
-      inputSchema: z
-        .object({
-          message_id: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "message_id")),
-          emoji_id: z
-            .string()
-            .min(1)
-            .describe(toolParameterPrompt(definition.name, "emoji_id")),
-          remove: z
+          seconds: z.number().nonnegative().describe(parameter("seconds")),
+          note: z.string().min(1).optional().describe(parameter("note")),
+          do_not_disturb: z
             .boolean()
             .optional()
-            .describe(toolParameterPrompt(definition.name, "remove")),
-          reason: z
-            .string()
-            .optional()
-            .describe(toolParameterPrompt(definition.name, "reason"))
+            .describe(parameter("do_not_disturb"))
         })
-        .strict(),
-      async execute(input) {
-        return executeActionToolInput(definition, input, runtime);
-      }
-    }) as unknown as ToolSet[string];
+        .strict();
+    case "bash":
+      return z
+        .object({
+          command: z.string().min(1).describe(parameter("command"))
+        })
+        .strict();
   }
-
-  return tool({
-    description: renderActionToolDescription(definition.name),
-    inputSchema: z
-      .object({
-        reason: z
-          .string()
-          .optional()
-          .describe(toolParameterPrompt(definition.name, "reason"))
-      })
-      .strict(),
-    async execute(input) {
-      return executeActionToolInput(definition, input, runtime);
-    }
-  }) as unknown as ToolSet[string];
 }
 
 function toolParameterPrompt(
@@ -1274,395 +844,6 @@ function toolParameterPrompt(
     );
   }
   return description;
-}
-
-function collectModelActionResult(
-  toolCalls: readonly unknown[],
-  executedToolResults: ToolExecutionResult[],
-  modelSteps: ModelStepTraceSnapshot[],
-  actionTools: readonly ToolDefinition[]
-): ModelActionResult {
-  const actionToolNames = new Set<string>(
-    actionTools.map((candidate) => candidate.name)
-  );
-  const calledActionTool = toolCalls.some((call) => {
-    const name = readUnknownProperty(call, "toolName");
-    return typeof name === "string" && actionToolNames.has(name);
-  });
-  if (calledActionTool && executedToolResults.length === 0) {
-    throw new Error(
-      "Main agent called tools, but no tool executions were recorded."
-    );
-  }
-
-  return {
-    proposedActions: executedToolResults.map((result) => result.proposal),
-    toolResults: executedToolResults,
-    modelResponses: modelSteps
-      .map((step) => step.response)
-      .filter((response): response is ModelResponseSnapshot => Boolean(response)),
-    modelSteps
-  };
-}
-
-async function executeActionToolInput(
-  definition: ToolDefinition,
-  input: unknown,
-  runtime?: ActionToolRuntime
-): Promise<Record<string, unknown>> {
-  if (!runtime) {
-    return {
-      toolName: definition.name,
-      status: "unavailable",
-      reason: "Chat action tools are disabled during terminal dreaming."
-    };
-  }
-  throwIfTurnSteered(runtime.runOptions.signal);
-  const connector = runtime.runOptions.connector;
-  if (!connector) {
-    throw new Error(`Action tool ${definition.name} requires a connector.`);
-  }
-
-  const proposal = ActionProposalSchema.parse({
-    id: randomUUID(),
-    proposedAt: runtime.now().toISOString(),
-    ...actionFromToolInput(
-      definition.name,
-      readInputObject(input, definition.name),
-      selectCurrentMessageEvent(runtime.context)
-    )
-  });
-  await runtime.runOptions.onToolExecutionStart?.(proposal);
-  const [result] = await executeActions({
-    connector,
-    proposals: [proposal],
-    now: runtime.runOptions.now ?? runtime.now,
-    ...(runtime.runOptions.signal
-      ? { signal: runtime.runOptions.signal }
-      : {}),
-    ...(runtime.runOptions.traceId
-      ? { traceId: runtime.runOptions.traceId }
-      : {}),
-    ...(runtime.runOptions.toolImplementations
-      ? { toolImplementations: runtime.runOptions.toolImplementations }
-      : {})
-  });
-  if (!result) {
-    throw new Error(`Action tool ${definition.name} did not return a result.`);
-  }
-
-  let imageRead:
-    | { attached: true; mediaType: string }
-    | { attached: false; error: string }
-    | undefined;
-  if (
-    result.proposal.toolName === "read_image" &&
-    result.status === "executed"
-  ) {
-    if (!result.result?.media) {
-      imageRead = {
-        attached: false,
-        error: "The connector returned image metadata but no readable media."
-      };
-    } else {
-      try {
-        const content = await readImageContentForModel(result.result.media);
-        runtime.pendingImageContents.push({
-          file: result.proposal.params.file,
-          data: content.data,
-          mediaType: content.mediaType
-        });
-        imageRead = { attached: true, mediaType: content.mediaType };
-      } catch (error) {
-        imageRead = {
-          attached: false,
-          error: error instanceof Error ? error.message : String(error)
-        };
-      }
-    }
-  }
-
-  runtime.executedToolResults.push(result);
-  await runtime.runOptions.onToolExecutionEnd?.(proposal, result);
-  return summarizeToolResultForModel(result, imageRead);
-}
-
-function summarizeToolResultForModel(
-  result: ToolExecutionResult,
-  imageRead?:
-    | { attached: true; mediaType: string }
-    | { attached: false; error: string }
-): Record<string, unknown> {
-  return {
-    toolName: result.proposal.toolName,
-    status: result.status,
-    ...(result.reason ? { reason: result.reason } : {}),
-    ...(result.result?.externalId ? { externalId: result.result.externalId } : {}),
-    ...(result.result?.error ? { error: result.result.error } : {}),
-    ...(result.result?.data !== undefined
-      ? {
-          data: summarizeConnectorData(
-            result.result.data,
-            result.proposal.toolName !== "fetch_message"
-          )
-        }
-      : {}),
-    ...(imageRead ? { image: imageRead } : {})
-  };
-}
-
-function actionFromToolInput(
-  toolName: string,
-  args: Record<string, unknown>,
-  currentEvent: MessageReceivedEvent
-): Pick<ActionProposal, "toolName" | "reason" | "params"> {
-  const reason = typeof args.reason === "string" ? args.reason : undefined;
-  const base = {
-    ...(reason ? { reason } : {})
-  };
-
-  if (toolName === "say_nothing") {
-    return {
-      ...base,
-      toolName: "say_nothing",
-      params: {}
-    };
-  }
-
-  if (toolName === "bash") {
-    return {
-      ...base,
-      toolName: "bash",
-      params: {
-        command: readRequiredStringArgument(args, "command", toolName)
-      }
-    };
-  }
-
-  if (toolName === "leave") {
-    return {
-      ...base,
-      toolName: "leave",
-      params: {}
-    };
-  }
-
-  if (toolName === "fetch_message") {
-    return {
-      ...base,
-      toolName: "fetch_message",
-      params: {
-        messageId: readRequiredStringArgument(args, "message_id", toolName)
-      }
-    };
-  }
-
-  if (toolName === "read_image") {
-    return {
-      ...base,
-      toolName: "read_image",
-      params: {
-        file: readRequiredStringArgument(args, "file", toolName)
-      }
-    };
-  }
-
-  if (toolName === "send_group_message") {
-    return {
-      ...base,
-      toolName: "send_group_message",
-      params: {
-        groupId: currentEvent.conversation.id,
-        text: readRequiredStringArgument(args, "text", toolName)
-      }
-    };
-  }
-
-  if (toolName === "send_dm") {
-    return {
-      ...base,
-      toolName: "send_dm",
-      params: {
-        userId: readRequiredStringArgument(args, "user_id", toolName),
-        text: readRequiredStringArgument(args, "text", toolName)
-      }
-    };
-  }
-
-  if (toolName === "send_image") {
-    return {
-      ...base,
-      toolName: "send_image",
-      params: {
-        conversation: currentConversationTarget(currentEvent),
-        file: readRequiredStringArgument(args, "file", toolName),
-        ...optionalStringArgument(args, "caption"),
-        ...optionalStringArgument(args, "summary"),
-        ...optionalStringArgument(args, "reply_to_message_id", {
-          as: "replyToMessageId"
-        })
-      }
-    };
-  }
-
-  if (toolName === "search_sticker") {
-    return {
-      ...base,
-      toolName: "search_sticker",
-      params: {
-        query: readRequiredStringArgument(args, "query", toolName),
-        ...(typeof args.limit === "number" ? { limit: args.limit } : {})
-      }
-    };
-  }
-
-  if (toolName === "send_sticker") {
-    return {
-      ...base,
-      toolName: "send_sticker",
-      params: {
-        conversation: currentConversationTarget(currentEvent),
-        stickerId: readRequiredStringArgument(
-          args,
-          "sticker_id",
-          toolName
-        ),
-        ...optionalStringArgument(args, "reply_to_message_id", {
-          as: "replyToMessageId"
-        })
-      }
-    };
-  }
-
-  if (toolName === "poke_user") {
-    return {
-      ...base,
-      toolName: "poke_user",
-      params: {
-        userId: readRequiredStringArgument(args, "user_id", toolName),
-        conversation: currentConversationTarget(currentEvent)
-      }
-    };
-  }
-
-  if (toolName === "recall_own_message") {
-    return {
-      ...base,
-      toolName: "recall_own_message",
-      params: {
-        messageId: readRequiredStringArgument(
-          args,
-          "own_message_id",
-          toolName
-        )
-      }
-    };
-  }
-
-  if (toolName === "react_to_message") {
-    return {
-      ...base,
-      toolName: "react_to_message",
-      params: {
-        messageId:
-          readOptionalStringArgument(args, "message_id") ??
-          currentEvent.message.id,
-        emojiId: readRequiredStringArgument(args, "emoji_id", toolName),
-        ...(typeof args.remove === "boolean" ? { remove: args.remove } : {})
-      }
-    };
-  }
-
-  throw new Error(`Unsupported action tool: ${toolName}`);
-}
-
-function summarizeConnectorData(value: unknown, sanitize = true): unknown {
-  const visible = sanitize ? sanitizeUntrustedValue(value) : value;
-  const json = safeJsonStringify(visible);
-  if (!json || json.length <= 4000) {
-    return visible;
-  }
-  return {
-    truncated: true,
-    preview: json.slice(0, 4000)
-  };
-}
-
-function safeJsonStringify(value: unknown): string | undefined {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function currentConversationTarget(event: MessageReceivedEvent): {
-  kind: "group" | "private";
-  id: string;
-} {
-  return {
-    kind: event.conversation.kind,
-    id: event.conversation.id
-  };
-}
-
-function readInputObject(input: unknown, toolName: string): Record<string, unknown> {
-  if (!input || typeof input !== "object") {
-    return {};
-  }
-  if (Array.isArray(input)) {
-    throw new Error(`Action tool ${toolName} input must be an object.`);
-  }
-  return input as Record<string, unknown>;
-}
-
-function readRequiredStringArgument(
-  args: Record<string, unknown>,
-  key: string,
-  toolName: string
-): string {
-  const value = args[key];
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`Action tool ${toolName} requires string argument "${key}".`);
-  }
-  return value;
-}
-
-function readOptionalStringArgument(
-  args: Record<string, unknown>,
-  key: string
-): string | undefined {
-  const value = args[key];
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function optionalStringArgument(
-  args: Record<string, unknown>,
-  key: string,
-  options: { as?: string } = {}
-): Record<string, string> {
-  const value = readOptionalStringArgument(args, key);
-  return value ? { [options.as ?? key]: value } : {};
-}
-
-function selectCurrentMessageEvent(context: CompiledContext): MessageReceivedEvent {
-  const windowEvents =
-    context.window?.events
-      .map((record) => record.event)
-      .filter(
-        (event): event is MessageReceivedEvent => event.type === "MessageReceived"
-      ) ?? [];
-
-  if (context.event.type === "MessageReceived") {
-    return context.event;
-  }
-
-  const fallback = windowEvents.at(-1);
-  if (fallback) {
-    return fallback;
-  }
-
-  throw new Error("AI SDK model requires at least one message event.");
 }
 
 function snapshotMessages(

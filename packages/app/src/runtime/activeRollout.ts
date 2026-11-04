@@ -17,7 +17,7 @@ import {
   type RolloutWriter
 } from "../rollout";
 import type { SpanRecord } from "../trace/schemas";
-import type { ToolExecutionResult } from "../tools/executeActions";
+import type { ToolExecutionResult } from "../tools/results";
 import type { ActionProposal, ToolDefinition } from "../tools/schemas";
 
 const RECENT_SPAN_ID_WINDOW = 4_096;
@@ -47,6 +47,8 @@ export interface ActiveRollout {
     outbound: boolean
   ): Promise<void>;
   recordSpans(spans: readonly SpanRecord[]): Promise<void>;
+  /** The conversation this wake entered; written with the terminal record. */
+  setConversationKey(conversationKey: string): void;
   close(status: RolloutTerminalStatus, reason?: string): Promise<void>;
 }
 
@@ -79,6 +81,7 @@ export function createActiveRollout(
   let operationTail: Promise<void> = Promise.resolve();
   let initialized = false;
   let closed = false;
+  let enteredConversationKey: string | undefined;
   const pendingExchangeIds = new Set<string>();
 
   const enqueue = (
@@ -201,6 +204,10 @@ export function createActiveRollout(
       }
     },
 
+    setConversationKey(conversationKey) {
+      enteredConversationKey = conversationKey;
+    },
+
     async close(status, reason) {
       if (closed) {
         await operationTail;
@@ -210,7 +217,12 @@ export function createActiveRollout(
       await operationTail;
       closed = true;
       const writer = await writerPromise;
-      await writer.close(status, reason ? { reason } : {});
+      await writer.close(status, {
+        ...(reason ? { reason } : {}),
+        ...(enteredConversationKey
+          ? { metadata: { conversationKey: enteredConversationKey } }
+          : {})
+      });
     }
   };
 

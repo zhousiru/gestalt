@@ -35,37 +35,18 @@ export async function createOneBotRuntime(
     model: createAiSdkModelFromConfig(config),
     ...(options.liveEvents ? { liveEvents: options.liveEvents } : {})
   });
-  const observedOutcomes = new Set<Promise<unknown>>();
-
   options.transport.onEventError((failure) => {
     reportFailure(failure.code, failure.error);
   });
   options.transport.onEvent(async (rawEvent) => {
     const event = connector.normalizeEvent(rawEvent);
     if (event) {
-      const dispatch = await runtime.dispatchEvent(event);
-      observeOutcome(dispatch.outcome);
+      await runtime.dispatchEvent(event);
     }
   });
   await options.transport.connect();
+  runtime.startLife();
   return runtime;
-
-  function observeOutcome(outcome: Promise<unknown>): void {
-    if (observedOutcomes.has(outcome)) {
-      return;
-    }
-    observedOutcomes.add(outcome);
-    void outcome
-      .then(
-        () => undefined,
-        (error: unknown) => {
-          reportFailure("runtime_outcome_failed", error);
-        }
-      )
-      .finally(() => {
-        observedOutcomes.delete(outcome);
-      });
-  }
 
   function reportFailure(code: string, error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);

@@ -113,29 +113,25 @@ async function main(): Promise<void> {
     mentionsBot: options.mentionsBot
   });
 
-  const result = await runtime.handleEvent(event);
-  await runtime.whenIdle();
+  runtime.startLife();
+  await runtime.loop.whenQuiescent();
+  await runtime.dispatchEvent(event);
+  await runtime.loop.whenQuiescent();
+  if (!liveServer) {
+    await runtime.shutdown();
+  }
 
   console.log(
     JSON.stringify(
-      result
-        ? {
-            triggered: true,
-            traceId: result.traceId,
-            gestaltHome: runtime.home.root,
-            proposedActions: result.proposedActions.map(
-              (action) => action.toolName
-            ),
-            tools: result.toolResults.map((toolResult) => toolResult.status),
-            ...(liveServer ? { liveUrl: liveServer.url } : {})
-          }
-        : {
-            triggered: false,
-            gestaltHome: runtime.home.root,
-            proposedActions: [],
-            tools: [],
-            ...(liveServer ? { liveUrl: liveServer.url } : {})
-          },
+      {
+        gestaltHome: runtime.home.root,
+        wakes: runtime.loop.wakes.map((wake) => ({
+          reason: wake.reason,
+          place: wake.place,
+          said: wake.said
+        })),
+        ...(liveServer ? { liveUrl: liveServer.url } : {})
+      },
       null,
       2
     )

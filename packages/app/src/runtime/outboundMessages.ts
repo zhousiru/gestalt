@@ -2,7 +2,7 @@ import type { CanonicalEvent, Conversation } from "../events/schemas";
 import type { GestaltConfig } from "../home/loadConfig";
 import type { AppendEventOptions } from "../session/store";
 import type { SessionEventRecord } from "../session/schemas";
-import type { ToolExecutionResult } from "../tools/executeActions";
+import type { ToolExecutionResult } from "../tools/results";
 import type { ActionProposal } from "../tools/schemas";
 
 export interface CommitOutboundMessageInput {
@@ -20,7 +20,7 @@ export interface CommitOutboundMessageInput {
 /**
  * Commits a known-success outbound message to its target conversation before
  * model execution may continue. The message contains no connector locator or
- * binary payload; images and stickers use a transcript-safe description.
+ * binary payload; stickers use a transcript-safe description.
  */
 export async function commitOutboundMessage(
   input: CommitOutboundMessageInput
@@ -28,11 +28,7 @@ export async function commitOutboundMessage(
   if (input.result.status !== "executed") {
     return undefined;
   }
-  const target = outboundMessageTarget(
-    input.proposal,
-    input.result,
-    input.sourceEvent
-  );
+  const target = outboundMessageTarget(input.proposal, input.result);
   if (!target) {
     return undefined;
   }
@@ -82,8 +78,7 @@ export async function commitOutboundMessage(
 
 function outboundMessageTarget(
   proposal: ActionProposal,
-  result: ToolExecutionResult,
-  sourceEvent: CanonicalEvent
+  result: ToolExecutionResult
 ):
   | {
       conversation: Conversation;
@@ -92,90 +87,27 @@ function outboundMessageTarget(
       raw?: Record<string, unknown>;
     }
   | undefined {
-  switch (proposal.toolName) {
-    case "send_group_message": {
-      const replyToMessageId = parseLeadingReplyMessageId(proposal.params.text);
-      return {
-        conversation: targetConversation(
-          "group",
-          proposal.params.groupId,
-          sourceEvent
-        ),
-        text: proposal.params.text,
-        ...(replyToMessageId ? { replyToMessageId } : {})
-      };
-    }
-    case "send_dm":
-      return {
-        conversation: targetConversation(
-          "private",
-          proposal.params.userId,
-          sourceEvent
-        ),
-        text: proposal.params.text
-      };
-    case "send_image":
-      return {
-        conversation: targetConversation(
-          proposal.params.conversation.kind,
-          proposal.params.conversation.id,
-          sourceEvent
-        ),
-        text: imageTranscriptText(proposal),
-        ...(proposal.params.replyToMessageId
-          ? { replyToMessageId: proposal.params.replyToMessageId }
-          : {})
-      };
-    case "send_sticker":
-      return {
-        conversation: targetConversation(
-          proposal.params.conversation.kind,
-          proposal.params.conversation.id,
-          sourceEvent
-        ),
-        text: stickerTranscriptText(proposal, result),
-        raw: {
-          generatedBy: "send_sticker",
-          stickerId: proposal.params.stickerId
-        },
-        ...(proposal.params.replyToMessageId
-          ? { replyToMessageId: proposal.params.replyToMessageId }
-          : {})
-      };
-    default:
-      return undefined;
+  if (proposal.toolName !== "say") {
+    return undefined;
   }
-}
-
-function targetConversation(
-  kind: Conversation["kind"],
-  id: string,
-  sourceEvent: CanonicalEvent
-): Conversation {
-  const same =
-    sourceEvent.conversation.kind === kind && sourceEvent.conversation.id === id;
+  const { conversation, replyTo, stickerId, text } = proposal.params;
+  if (stickerId) {
+    return {
+      conversation,
+      text: stickerTranscriptText(stickerId, result),
+      raw: { generatedBy: "say", stickerId },
+      ...(replyTo ? { replyToMessageId: replyTo } : {})
+    };
+  }
   return {
-    kind,
-    id,
-    ...(same && sourceEvent.conversation.name
-      ? { name: sourceEvent.conversation.name }
-      : {})
+    conversation,
+    text: text ?? "",
+    ...(replyTo ? { replyToMessageId: replyTo } : {})
   };
 }
 
-function imageTranscriptText(
-  proposal: Extract<ActionProposal, { toolName: "send_image" }>
-): string {
-  const description = proposal.params.summary
-    ? `[图片：${proposal.params.summary}]`
-    : "[图片]";
-  return proposal.params.caption
-    ? `${proposal.params.caption}\n${description}`
-    : description;
-}
-
 function stickerTranscriptText(
-  proposal: Extract<ActionProposal, { toolName: "send_sticker" }>,
+  stickerId: string,
   result: ToolExecutionResult
 ): string {
   const data =
@@ -186,12 +118,8 @@ function stickerTranscriptText(
       : undefined;
   const description = typeof data?.visual === "string" ? data.visual : undefined;
   return description
-    ? `[表情包 ${proposal.params.stickerId}：${description}]`
-    : `[表情包 ${proposal.params.stickerId}]`;
-}
-
-function parseLeadingReplyMessageId(text: string): string | undefined {
-  return text.match(/^\[CQ:reply,id=([^\],]+)[^\]]*\]/)?.[1];
+    ? `[表情包 ${stickerId}：${description}]`
+    : `[表情包 ${stickerId}]`;
 }
 
 function readOptionalString(

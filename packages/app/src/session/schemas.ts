@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { CanonicalEventSchema, ConversationSchema } from "../events/schemas";
-import { ActionProposalSchema } from "../tools/schemas";
 
 export const MessageWindowReasonSchema = z.enum([
   "manual",
@@ -11,7 +10,8 @@ export const MessageWindowReasonSchema = z.enum([
   "icebreaker",
   "reply_to_bot",
   "steer",
-  "replay"
+  "replay",
+  "wake"
 ]);
 
 export const TurnPhaseSchema = z.enum([
@@ -63,7 +63,7 @@ export const SessionTurnRecordSchema = z
     eventIds: z.array(z.string().min(1)).min(1),
     steerCount: z.number().int().nonnegative(),
     phases: z.array(TurnPhaseRecordSchema),
-    proposedActions: z.array(ActionProposalSchema),
+    proposedActions: z.array(z.looseObject({ toolName: z.string().min(1) })),
     toolResults: z.array(z.unknown())
   })
   .strict();
@@ -97,6 +97,32 @@ export const TriggerAttemptRecordSchema = z
   })
   .strict();
 
+export const WakeRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    rolloutId: z.string().min(1),
+    reason: z.enum([
+      "boot",
+      "timer",
+      "vibration",
+      "dream_due",
+      "budget_spent"
+    ]),
+    kind: z.enum(["day", "dream"]),
+    place: z.string().min(1).optional(),
+    status: z.enum(["completed", "failed"]),
+    startedAt: z.string().min(1),
+    endedAt: z.string().min(1),
+    sleepSeconds: z.number().nonnegative(),
+    doNotDisturb: z.boolean(),
+    said: z.number().int().nonnegative(),
+    held: z.number().int().nonnegative(),
+    tokens: z.number().int().nonnegative(),
+    commit: z.string().min(1).optional(),
+    error: z.string().min(1).optional()
+  })
+  .strict();
+
 export const ConversationSessionStateSchema = z
   .object({
     conversation: ConversationSchema,
@@ -113,7 +139,8 @@ export const ConversationSessionStateSchema = z
 export const SessionDiagnosticsSchema = z
   .object({
     exportedAt: z.string().min(1),
-    conversations: z.array(ConversationSessionStateSchema)
+    conversations: z.array(ConversationSessionStateSchema),
+    wakes: z.array(WakeRecordSchema).default([])
   })
   .strict();
 
@@ -152,6 +179,13 @@ export const SessionJournalRecordSchema = z.discriminatedUnion("type", [
       recordedAt: z.string().min(1),
       record: AgentLoopExitRecordSchema
     })
+    .strict(),
+  z
+    .object({
+      type: z.literal("wake"),
+      recordedAt: z.string().min(1),
+      record: WakeRecordSchema
+    })
     .strict()
 ]);
 
@@ -163,6 +197,7 @@ export type TurnPhaseRecord = z.infer<typeof TurnPhaseRecordSchema>;
 export type SessionTurnRecord = z.infer<typeof SessionTurnRecordSchema>;
 export type AgentLoopExitRecord = z.infer<typeof AgentLoopExitRecordSchema>;
 export type TriggerAttemptRecord = z.infer<typeof TriggerAttemptRecordSchema>;
+export type WakeRecord = z.infer<typeof WakeRecordSchema>;
 export type ConversationSessionState = z.infer<
   typeof ConversationSessionStateSchema
 >;

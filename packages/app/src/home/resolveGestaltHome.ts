@@ -5,7 +5,8 @@ export interface GestaltHome {
   root: string;
   configPath: string;
   personaDir: string;
-  memoriesDir: string;
+  lifeDir: string;
+  lifeStatePath: string;
   sessionsDir: string;
   tracesDir: string;
   logsDir: string;
@@ -35,7 +36,8 @@ export async function resolveGestaltHome(
     root,
     configPath: path.join(root, "config.toml"),
     personaDir: path.join(root, "persona"),
-    memoriesDir: path.join(root, "memories"),
+    lifeDir: path.join(root, "life"),
+    lifeStatePath: path.join(root, "sessions", "life-state.json"),
     sessionsDir: path.join(root, "sessions"),
     tracesDir: path.join(root, "traces"),
     logsDir: path.join(root, "logs"),
@@ -52,7 +54,6 @@ export async function resolveGestaltHome(
     await Promise.all([
       mkdir(home.root, { recursive: true }),
       mkdir(home.personaDir, { recursive: true }),
-      mkdir(home.memoriesDir, { recursive: true }),
       mkdir(home.sessionsDir, { recursive: true }),
       mkdir(home.tracesDir, { recursive: true }),
       mkdir(home.logsDir, { recursive: true }),
