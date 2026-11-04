@@ -2,13 +2,14 @@
 
 # Gestalt
 
-Interactive chatbot system.
+A chatbot that has a life rather than a queue. It wakes, chooses one place, acts or does not, and goes back to sleep. Who it becomes comes from what it lived through. See [the life loop](docs/LIFE_LOOP.md).
 
 ## Features
 
-- Context-aware group replies, DMs, reactions, pokes, images, stickers, and silence.
-- Browser automation through phase-scoped just-bash and agent-browser.
-- Markdown-based long-term memory maintained through dreaming.
+- One life across every chat: a single wake at a time, a daily token budget, and sleep it chooses itself.
+- Group replies, DM replies, reactions, images, stickers, and silence as the default.
+- Its own corner of the internet through just-bash and agent-browser.
+- Identity and memory in a git repository, changed only by dreaming.
 - Background sticker collection, vision analysis, embedding search, and model-selected sending.
 
 ## Docker
@@ -63,14 +64,11 @@ embedding_model_api_key_env = "MODEL_API_KEY"
 embedding_model_dimensions = 1024
 
 sticker_scraping_enabled = true
-sticker_recommendation_probability = 0.25
-
-dreaming_enabled = true
 ```
 
 ## Persona
 
-Put one or more persona files in `gestalt-home/persona/`. A single `persona.md` is enough. See [writing a persona](docs/PERSONA.md) for the format and a short example.
+Put one or more persona files in `gestalt-home/persona/`. A single `persona.md` is enough. It is a birth value: after first start the identity lives in `life/me/`. See [writing a persona](docs/PERSONA.md). A home from an older version needs [migrating](docs/LIFE_LOOP.md#migrating-an-older-home).
 
 > [!NOTE]
 > Currently tested only on QQ through OneBot v11.

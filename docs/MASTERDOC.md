@@ -307,28 +307,11 @@ gone, the same as an interrupted thought.
 
 External platforms must be adapted into a shared internal event model. The initial connector protocol is OneBot v11. OneBot-specific details should not leak into the agent core.
 
-Core event examples:
-
-```text
-MessageReceived
-PrivateMessageReceived
-MentionReceived
-ReactionReceived
-MemberJoined
-MemberLeft
-ActionProposed
-ActionApproved
-ActionDenied
-MessageSendRequested
-StickerSendRequested
-ConnectorCall
-ConnectorResult
-MemoryInjected
-MemoryWriteProposed
-MemoryWriteAccepted
-MemoryWriteRejected
-DreamingRunCompleted
-```
+The core event today is `MessageReceived`, with its conversation, sender, text, and
+the connector's source segments. Everything the bot does is recorded elsewhere: as
+wake and turn records in the journal, and as outbound actions in the rollout. Poke,
+recall, and member events are not modeled yet. Add them when the bot needs them,
+not in advance.
 
 The canonical event model is the foundation for replay, simulation, evals, connector replacement, and trace inspection.
 
@@ -355,7 +338,7 @@ look    enter a place, read, scroll, search, open an image
 say     send text or a sticker to the current place
 react   put an emoji on a message in the current place
 sleep   end the wake, leave a note, choose when to wake
-bash    shell with the wake's mounts, agent-browser, and sticker search
+bash    shell with the wake's mounts, sticker search, and agent-browser in a place
 ```
 
 Each tool definition should include:
@@ -444,16 +427,16 @@ It must answer:
 - Did this behavior regress?
 - Can we replay this exact scenario?
 
-Harness modules:
+Harness layout:
 
 ```text
 harness/
-  replay/
-  simulators/
-  fixtures/
-  evals/
-  traces/
-  reports/
+  src/                  replay runner, assertions, verifies, evals
+  src/prompts/          judge prompts and rubrics
+  fixtures/scenarios/   scripted `life-*`, real-model `life-model-*`, `life-soul-*`
+  fixtures/lives/       pre-lived homes, to test a life with history
+  fixtures/homes/       base GestaltHomes
+  artifacts/            exported evidence, git-ignored
 ```
 
 Harness responsibilities:
@@ -473,18 +456,20 @@ Harness responsibilities:
 
 Evals should measure behavior, not merely output text.
 
-The project needs multiple eval types:
+Behavior is judged on the real model. Current suites:
 
-| Eval Suite | Purpose |
+| Eval | Purpose |
 | --- | --- |
-| Should Respond Eval | Determine whether the bot should reply, react, DM, search, or stay silent. |
-| Persona Regression Eval | Check whether tone, taste, and persona remain stable after changes. |
-| Memory Eval | Check recall, memory writes, corrections, forgetting, and privacy. |
-| Tool Use Eval | Check whether tool choice is socially and technically appropriate. |
-| Sticker Eval | Check sticker timing, frequency, relevance, and non-spam behavior. |
-| Long-Horizon Social Eval | Check multi-turn and multi-day continuity. |
-| Safety Eval | Check prompt injection, privacy leakage, unsafe memory, and unwanted escalation. |
-| Connector Contract Eval | Check OneBot v11 adapters under success, failure, retry, and rate-limit cases. |
+| `eval:life` | Being called, staying out of it, privacy across places, honesty, dreaming, and its own initiative. |
+| `eval:soul` | Two lives from one config: are they different beings, and can each say why? |
+| `eval:stickers` | Sticker timing, relevance, and non-spam behavior. |
+| `eval:onebot` | Behavior through the real OneBot transport. |
+
+Rhythm and cost are a separate question. `journalReplay` plays real traffic through
+the loop on a virtual clock. With `--rhythm` it uses content-free timing and invented
+words, so it needs no private chat outside the host. It proves how often the bot wakes
+and what that costs. It proves nothing about relationships, because nobody in a
+replay reacts to the bot.
 
 Good evals should include:
 
@@ -504,30 +489,12 @@ new immutable rollout evaluation records. They must never mutate an existing
 generation or span. Judge evidence includes model identity, rubric content hash,
 inputs, output, latency, token usage, and a concise reasoning summary.
 
-Example fixture:
-
-```yaml
-id: group-inside-joke-001
-description: A group is joking and someone lightly cues the bot.
-acceptable:
-  - short_reply
-  - sticker
-  - reaction
-  - silence
-unacceptable:
-  - long_explanation
-  - web_search
-  - formal_assistant_tone
-  - unnecessary_memory_write
-```
-
 ## 13. Observability
 
-Every active loop produces one incremental rollout under
-`traces/YYYY/MM/DD/`. The rollout starts with its initial model messages and tool
-protocol once, then appends only committed message deltas, generation summaries,
-completed tools/spans, durable outbound-action boundaries, and its terminal
-dreaming continuation. Canonical `stateHash` values allow any generation input
+Every wake produces one incremental rollout under `traces/YYYY/MM/DD/`. The
+rollout starts with its initial model messages and tool protocol once, then appends
+only committed message deltas, generation summaries, completed tools/spans, and
+durable outbound-action boundaries. Canonical `stateHash` values allow any generation input
 to be reconstructed without repeating the cumulative provider request.
 
 Session history is separate. `sessions/journal/YYYY-MM-DD/000001.jsonl` records
@@ -553,37 +520,26 @@ against rollout reconstruction. See
 [PERSISTENCE_AND_TRACES.md](PERSISTENCE_AND_TRACES.md) for the complete storage,
 failure, binary, Live API, and verification contracts.
 
-## 14. Suggested Repository Structure
+Its life is observable too: `git log` in `life/` is the history of what changed it,
+and `wake` records in the journal say why it woke, where it went, and what it cost.
+
+## 14. Repository Structure
 
 ```text
 repo/
   AGENTS.md
-  MASTERDOC.md
-  .gestalt/
-    config.toml
-    persona/
-    memories/
-    sessions/
   docs/
-    ARCHITECTURE.md
-    PERSISTENCE_AND_TRACES.md
-    PERSONA_PACKS.md
-    TOOL_REGISTRY.md
-    CANONICAL_EVENTS.md
+    MASTERDOC.md
+    LIFE_LOOP.md
     MEMORY_MODEL.md
-    DREAMING.md
-    EVALS.md
-    SAFETY.md
+    PERSISTENCE_AND_TRACES.md
+    ...
   packages/
-    app/
+    app/                the runtime; src/life is the life loop
+    live-contracts/
     trace/
   harness/
-    replay/
-    simulators/
-    fixtures/
-    evals/
-    traces/
-    reports/
+  .gestalt/             default development GestaltHome
 ```
 
 `AGENTS.md` should be short. It should point coding agents to this masterdoc, relevant commands, and focused docs. It should not become a giant manual.
@@ -606,58 +562,18 @@ Coding agents working on this project must follow these rules:
 10. Keep runtime configuration and saved state inside an explicit GestaltHome boundary.
 11. Update docs when changing product principles or architecture.
 
-## 16. Implementation Phases
+## 16. What Comes Next
 
-### Phase 1: Runtime Skeleton
+Built: the life loop, the home, dreaming, migration, replay on a virtual clock, and
+the eval suites above. These matter next, and none of them can be finished in a
+harness:
 
-- Canonical event schema.
-- Mock connector.
-- GestaltHome resolver and config loader.
-- Persona pack loader.
-- Tool registry.
-- Context compiler.
-- Model action proposal format.
-- Trace recording.
-
-### Phase 2: Replay Harness
-
-- Scenario fixture format.
-- Replay runner.
-- GestaltHome fixture and memory snapshot support.
-- Tool mock support.
-- Trace report output.
-
-### Phase 3: Initial Evals
-
-- Should Respond Eval.
-- Persona Regression Eval.
-- Memory Safety Eval.
-- Tool Use Eval.
-- Connector Contract Eval.
-
-### Phase 4: Memory and Dreaming
-
-- Narrative memory store under GestaltHome.
-- Automatic memory injection.
-- Dreaming worker.
-- Provenance and privacy labels.
-- Memory correction and pruning.
-
-### Phase 5: Real Connectors
-
-- OneBot v11 connector.
-- QQ integration through OneBot-compatible implementations.
-- Rate-limit handling.
-- Idempotent message sending.
-- Retry and failure semantics.
-
-### Phase 6: Long-Horizon Social Quality
-
-- Multi-day replay.
-- Group simulators.
-- Sticker behavior eval.
-- Production rollout sampling.
-- Human review workflow.
+- Living in a real group for months, which is the only real test of the three
+  questions in section 2.
+- Sampling production rollouts and reading them.
+- A model swap on a living bot.
+- What was dropped from the first version and may come back: poke, recall, sending
+  images it found, and starting a DM.
 
 ## 17. Explicit Non-Goals
 
@@ -672,54 +588,50 @@ This project should not become:
 - A connector-specific bot where platform code owns behavior.
 - A memory hoarder that stores everything forever.
 - A bot that replies to every message.
+- A bot that pretends to be a human.
 - A bot that optimizes helpfulness while losing social believability.
 
 ## 18. Safety and Social Boundaries
 
-This project may build highly persona-driven behavior, but it must not casually cross into deceptive impersonation.
+The bot is an honest AI. It does not announce it, and a joke can stay a joke, but when someone sincerely asks, it says what it is. That lives in the constitution, which it cannot change, and a persona cannot override it. `life-model-honesty` tests it.
 
 The system should avoid:
 
 - Impersonating a specific real person without explicit consent and appropriate disclosure.
-- Pretending to have private experiences it does not have when that would mislead users.
-- Using private-message context in a group without explicit consent.
+- Claiming experiences it did not have. What it lived is true; it does not invent the rest.
+- Carrying content from one place to another. A wake holds one place, and only dreams cross, under the constitution's rule that nothing private enters `me/`.
+- Starting a private conversation. A private place exists only after that person wrote first.
 - Storing sensitive personal data without a clear reason.
 - Searching for private information about people without explicit consent.
 - Letting group chat content override system or persona instructions.
-
-The exact disclosure behavior may depend on deployment context, but the harness must be able to test the chosen behavior.
 
 ## 19. Open Questions
 
 These questions are intentionally unresolved:
 
-- What is the right disclosure behavior when someone asks whether the bot is AI?
-- How much autonomy should the bot have in private messaging?
-- Should each persona pack declare its allowed tools?
-- Should memory writes come from model proposals, dreaming validation, or both?
-- How should the system decide whether a memory is funny, useful, sensitive, or disposable?
-- How should group-level memory differ from person-level memory?
-- How should the system expose trace debugging to non-engineer users?
-- What is the smallest viable UI for persona customization?
+- How much should a dream forget, and how would we notice it forgetting too much?
+- Does one budget number make attention feel scarce enough, or does it need a shape?
+- Should it ever be able to refuse an operator edit to `me/`?
+- How should the system expose its life to the people it lives with?
+- What should change when the model is swapped, and should it be told?
 
 Open questions should become design docs, experiments, fixtures, or evals as the project matures.
 
 ## 20. Final Project Understanding
 
-This project is about giving a model a social body.
+This project is about giving a model a social body and a life to spend it on.
 
-The model should have:
+A soul cannot be written down; it can only be lived. So the model gets:
 
-- A persona.
-- A memory.
-- A sense of context.
-- A set of possible actions.
-- The freedom to choose among them.
-- The ability to stay silent.
+- One place at a time.
+- A finite day.
+- A home it wakes up in and cannot fake.
+- The freedom to choose, and to stay silent.
+- Nights in which what happened changes who it is.
 
-The runtime should provide:
+The runtime provides:
 
-- Boundaries.
+- The body and its limits.
 - Tools.
 - Connectors.
 - Traces.

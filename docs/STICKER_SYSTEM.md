@@ -2,15 +2,16 @@
 
 ## Scope
 
-Gestalt collects QQ sticker messages outside the agent loop, analyzes them with
-the configured sub model, embeds three structured fields, and exposes two model tools:
-`search_sticker` and `send_sticker`.
+Gestalt collects QQ sticker messages outside the life loop, analyzes them with
+the configured sub model, embeds three structured fields, and lets the model use
+them in two steps: `sticker search <what you feel>` in `bash`, then
+`say({ sticker_id })`.
 
 Search results expose only a stable sticker id and the objective `visual`
 description. Emotion tags and usage examples remain retrieval and operator
 diagnostic data; they are not copied into the model-visible result.
 Incoming chat transcripts retain complete OneBot CQ markup so the model can
-identify image `file` values and call `read_image` when it needs visual context.
+identify image `file` values and call `look({ image })` when it needs visual context.
 
 ## Collection Boundary
 
@@ -24,8 +25,7 @@ The OneBot connector preserves parsed message segments under
 
 Ordinary `image.sub_type=0` messages, untyped images, QQ `face` messages, and
 self messages are not collected. Extraction happens for every allowed incoming
-message before trigger scheduling, so collection does not depend on the model
-being activated.
+message, so collection does not depend on the bot ever looking.
 
 ## Runtime Control
 
@@ -174,25 +174,23 @@ Each stored retrieval unit is embedded independently. Query embedding uses a
 channel-specific instruction for visual, emotion tags, or usage. This asymmetric
 format and the retrieval projection id are part of the embedding-space contract.
 
-`search_sticker({ query, limit? })` never searches usage phrases. It searches
+`sticker search` never searches usage phrases. It searches
 the `tags` and `visual` channels, deduplicates each channel by sticker id, and
 fuses the ranks with reciprocal-rank fusion (`k=60`) using weights `tags=0.6`
 and `visual=0.4`. It retrieves a larger candidate pool (at least 12, normally
 `limit * 4`, capped at 40), continuing through pages when repeated or stale rows
-would otherwise hide unique stickers. Recommendation after a text message
-searches only the `usage` channel; multiple matching usage phrases collapse to
-the best-ranked occurrence for that sticker before final ranking.
+would otherwise hide unique stickers.
 
-Both modes use deterministic rank-weighted sampling without replacement over
+Search uses deterministic rank-weighted sampling without replacement over
 the deduplicated pool. A candidate at rank `r` receives weight `1/r^1.5`; a
-stable seed derived from the action proposal makes replay deterministic while
-allowing different proposals to rotate among relevant stickers. This small
+stable seed derived from the wake and query makes replay deterministic while
+allowing different wakes to rotate among relevant stickers. This small
 randomization reduces repeated selection of the same globally popular sticker
 without introducing history counters or a separate popularity service.
 
-Both modes return only `{ sticker_id, visual }` candidates. The same id can be
+Search prints only sticker ids and `visual` descriptions. The same id can be
 returned and sent in any group or private chat.
-`send_sticker` accepts only that stable id. It prefers saved native
+`say` accepts only that stable id. It prefers saved native
 mface delivery and falls back to the cached bytes as
 `[CQ:image,file=base64://...,sub_type=1]`; custom image stickers use the same
 portable path so Gestalt and OneBot do not need a shared filesystem.
@@ -205,57 +203,11 @@ and atomically replaces the record in place. It supports `--home`, `--only`,
 `stickers/rebuild-structured.jsonl`. The previous Lance table is left untouched
 but is no longer selected by the current projection id.
 
-## Send-Result Recommendations
+## When It Sends One
 
-Successful `send_group_message` and `send_dm` tool results may expose passive
-sticker candidates for the model's next step:
-
-```toml
-sticker_recommendation_probability = 0.25
-sticker_recommendation_limit = 3
-```
-
-The probability is between `0` and `1`; the default is `0`, which disables the
-feature and performs no recommendation embedding call. The result limit is an
-integer from `1` through `20` and defaults to `3`. Admission uses a stable hash
-of the action proposal rather than process randomness, so replaying the same
-proposal makes the same decision.
-
-After a text send succeeds and is admitted, the runtime removes OneBot CQ
-control markup from the sent text, embeds up to 1000 characters, and searches
-only per-phrase usage retrieval units. The model-visible
-tool result gains:
-
-```json
-{
-  "data": {
-    "recommended_stickers": [
-      { "sticker_id": "stk_...", "visual": "..." }
-    ]
-  }
-}
-```
-
-Recommendations never send a sticker automatically. The model may use a
-returned id with `send_sticker` or ignore every candidate. Retrieval is
-best-effort: an embedding/index failure is logged by the sticker search path but
-does not change an already successful message send into a failed tool result.
-Search lifecycle entries identify recommendation retrieval separately from an
-explicit `search_sticker` call while retaining the same agent trace id.
-
-Sticker sending frequency remains persona behavior rather than this retrieval
-probability. The probability only controls whether candidates are added to a
-successful text-send result.
-Put the desired rhythm, common situations, and taboo cases in an early persona
-Markdown fragment such as `persona/2-style.md`. Keeping sticker behavior beside
-the general chat style makes it visible before lower-priority interests,
-cognitive notes, and boundaries, for example:
-
-```markdown
-- Use a sticker roughly once every four to six suitable playful turns, never as a quota.
-- After sending one, prefer text or silence on the next turn unless asked again.
-- Never use stickers for urgent, serious, grieving, or precision-critical exchanges.
-```
+There are no recommendations attached to send results and no probability. It looks
+for a sticker when it wants one. How often that is belongs to `me/`, where style
+lives, and can change in a dream.
 
 The normal transcript records a
 successful send as `[表情包 <id>：<visual>]`, so the model can see its own recent
@@ -277,13 +229,13 @@ Connector delivery failures return only stable public errors; connector response
 payloads remain behind the runtime boundary.
 
 Canonical session records, model transcripts, and Live session views retain
-complete OneBot CQ markup. `fetch_message` returns normalized text with complete
-CQ, and `read_image` keeps the original `file` value while attaching connector-
-returned image bytes to the next main-model step. Outgoing `send_sticker` actions are recorded in transcript history as
+complete OneBot CQ markup. `look({ message_id })` returns normalized text with complete
+CQ, and `look({ image })` keeps the original `file` value while attaching connector-
+returned image bytes to the next main-model step. Stickers sent with `say` are recorded in transcript history as
 `[表情包 <sticker_id>：<visual>]`; the proposal's exact id is therefore the durable
 association between the model action, the local record, the send log, and the
 synthetic self-message. The self event also stores the allowlisted runtime
-metadata `raw.generatedBy = "send_sticker"` and `raw.stickerId`, so replay never
+metadata `raw.generatedBy = "say"` and `raw.stickerId`, so replay never
 has to parse the human-readable transcript text to recover the link. Ordinary
 connector `raw` trees remain excluded from session memory and diagnostics.
 The model-visible send result contains only `stickerId` and `visual`; native/image
@@ -377,7 +329,7 @@ exact orphan-row pruning, invalid-neighbor search exhaustion, bot-wide search
 and send behavior, intermediate-stage restart recovery, config-default restoration,
 partial observation persistence, logger/Live failure isolation,
 bounded worker self-recovery, native/image/fallback sends, trace-correlated
-logs, text-send recommendation output, configurable Top-N, probability-zero
+logs, configurable Top-N,
 embedding suppression, authorization, and the no-model command boundary. The
 structured retrieval fixture additionally proves that active search calls only
 the tags and visual channels, recommendation calls only usage, repeated usage

@@ -228,6 +228,10 @@ export async function runScenario(
     const sessionJournal = await readSessionJournal(home.sessionsDir);
     const modelExchanges = modelCapture.exchanges;
     const modelRequests = modelExchanges.map((exchange) => exchange.request);
+    // Validation below compares rollouts, so it would hide why a wake failed.
+    for (const wake of wakes.filter((candidate) => candidate.status === "failed")) {
+      console.error(`${fixture.id}: wake at ${wake.startedAt} failed: ${wake.error}`);
+    }
     const { rollouts, reconstructedInputs } =
       await readAndValidateRolloutCapture(
         home.tracesDir,

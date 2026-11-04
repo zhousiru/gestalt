@@ -27,16 +27,39 @@ import {
 import { writeArtifactJson } from "./artifactBinary";
 import { getHarnessPaths, startLifeSimulation } from "./replayRunner";
 
+const INVENTED_LINES = [
+  "今天食堂的面还行",
+  "有人看昨晚的比赛吗",
+  "这个版本更新后好卡",
+  "我下午又要开会了",
+  "哈哈哈哈",
+  "周末有什么安排",
+  "刚才那个也太离谱了吧",
+  "我觉得还是旧的好用",
+  "外面下雨了",
+  "有没有人一起打两把",
+  "这个 bug 我查了一天",
+  "晚饭吃什么",
+  "好困啊",
+  "真的假的",
+  "推荐个耳机吧，预算三百",
+  "我猫又把杯子推下去了"
+];
+
 /**
- * Replays a real journal through the life loop to answer questions about
- * rhythm and cost: how often it wakes, what it spends, whether it speaks first.
- * It cannot answer questions about relationships: nobody in the journal ever
- * reacts to what the bot says here. Journals are private; they stay outside the
- * repository, and so do the artifacts.
+ * Replays real traffic through the life loop to answer questions about rhythm
+ * and cost: how often it wakes, what it spends, whether it speaks first. It
+ * cannot answer questions about relationships: nobody here ever reacts to what
+ * the bot says.
+ *
+ * `--rhythm` takes content-free timing rows and invents the words, so it needs
+ * no private chat on this machine. `--journal` replays the real text; journals
+ * are private, so they stay outside the repository, and so do the artifacts.
  */
 const { values } = parseArgs({
   options: {
     journal: { type: "string" },
+    rhythm: { type: "string" },
     home: { type: "string" },
     from: { type: "string" },
     to: { type: "string" },
@@ -44,9 +67,14 @@ const { values } = parseArgs({
     out: { type: "string" }
   }
 });
-if (!values.journal || !values.home || !values.from || !values.to) {
+if (
+  (!values.journal && !values.rhythm) ||
+  !values.home ||
+  !values.from ||
+  !values.to
+) {
   throw new Error(
-    "Usage: journalReplay --journal <dir> --home <dir> --from <iso> --to <iso> [--config <extra toml>] [--out <dir>]"
+    "Usage: journalReplay (--journal <dir> | --rhythm <jsonl>) --home <dir> --from <iso> --to <iso> [--config <extra toml>] [--out <dir>]"
   );
 }
 const from = new Date(values.from);
@@ -66,7 +94,9 @@ try {
   if (values.config) {
     await appendFile(path.join(tempHome, "config.toml"), `\n${values.config}\n`);
   }
-  const events = await readEvents(values.journal, from, to);
+  const events = values.rhythm
+    ? await readRhythm(values.rhythm, from, to)
+    : await readEvents(values.journal ?? "", from, to);
   const clock = createVirtualClock(from);
   const home = await resolveGestaltHome({ homePath: tempHome, create: false });
   const config = await loadConfig(home);
@@ -133,6 +163,59 @@ try {
   console.log(JSON.stringify(summary, null, 2));
 } finally {
   await rm(tempHome, { recursive: true, force: true, maxRetries: 3 });
+}
+
+async function readRhythm(
+  file: string,
+  start: Date,
+  end: Date
+): Promise<Array<{ at: number; event: CanonicalEvent }>> {
+  const raw = await readFile(file, "utf8");
+  const rows = raw
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          at: string;
+          kind: "group" | "private";
+          c: string;
+          s: string;
+          at_bot: boolean;
+          reply_to_bot: boolean;
+        }
+    );
+  const events: Array<{ at: number; event: CanonicalEvent }> = [];
+  for (const [index, row] of rows.entries()) {
+    const at = Date.parse(row.at);
+    if (at < start.valueOf() || at >= end.valueOf()) {
+      continue;
+    }
+    const called = row.at_bot || row.reply_to_bot;
+    const line = INVENTED_LINES[index % INVENTED_LINES.length] ?? "嗯";
+    events.push({
+      at,
+      event: {
+        id: `rhythm-${index}`,
+        type: "MessageReceived",
+        occurredAt: row.at,
+        source: { platform: "qq", accountId: "bot-1" },
+        conversation: {
+          kind: row.kind,
+          id: row.c,
+          ...(row.kind === "group" ? { name: `群${row.c.slice(1, 4)}` } : {})
+        },
+        sender: { id: row.s, displayName: `群友${row.s.slice(1, 4)}` },
+        message: {
+          id: `rhythm-m${index}`,
+          text: called ? `@小格 ${line}` : line,
+          mentionsBot: called
+        }
+      }
+    });
+  }
+  return events;
 }
 
 async function readEvents(

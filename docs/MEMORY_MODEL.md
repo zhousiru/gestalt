@@ -2,287 +2,104 @@
 
 ## Document Status
 
-This document records the current memory and dreaming design.
+This document records how Gestalt remembers. [LIFE_LOOP.md](LIFE_LOOP.md) holds the
+runtime contract for wakes, and this file holds what memory is and how it changes.
+Implementation lives in `packages/app/src/life/`: `store.ts` owns the home,
+`bash.ts` owns the mounts, and `wake.ts` owns what a wake can read.
 
-It expands the memory principles in `MASTERDOC.md`. It is intentionally architectural, but it also points to the current implementation seams in `packages/app`.
+## What Memory Is
 
-Current implementation entry points:
-
-- `packages/app/src/memory/store.ts`: file-backed self and user index loading.
-- `packages/app/src/memory/dreaming.ts`: AI SDK ToolLoopAgent dreaming runner that exposes a `bash` tool backed by `just-bash`.
-- `packages/app/src/context/renderTranscript.ts`: stable group transcript rendering.
-- `harness/fixtures/scenarios/memory-injection-dreaming.json`: self/user memory injection and write verification.
-- `harness/fixtures/scenarios/memory-correction-dreaming.json`: wrong memory correction verification.
-- `harness/fixtures/scenarios/memory-pruning-dreaming.json`: stale memory pruning verification.
-
-## Scope
-
-Memory is file-backed and rooted in GestaltHome.
-
-The first implementation should focus on:
-
-- A simple narrative memory layout.
-- Readable Markdown files.
-- Injecting high-signal index files into model context.
-- Letting dreaming maintain memory through a constrained bash environment.
-- Harness-visible before/after memory snapshots.
-
-This design does not introduce vector search, database storage, numeric relationship scores, or a custom memory patch language.
-
-## Memory Layout
-
-Memory lives under:
+Memory is the part of its life the bot still carries. It is plain Markdown in a git
+repository at `GestaltHome/life/`, and nothing else holds it: no vector search, no
+database, no numeric relationship scores, no memory patch language.
 
 ```text
-GestaltHome/
-  memories/
-    self/
-      index.md
-      some-subject.md
-    users/
-      <user-id>/
-        index.md
-        some-subject.md
+life/
+  constitution.md        the floor; the bot cannot change it
+  me/                    who it is; loaded into every wake
+  places/<id>/           what it knows about this place
+  places/<id>/diary/     dated notes from wakes there
+  places/web/            what it found online
+  places/archive/        memory from before the life loop; dreams only
 ```
 
-### Self Memory
+The runtime does not prescribe files inside `me/` or a place. The first version of
+`me/` is the persona, and the bot rearranges it however it likes.
 
-`memories/self/index.md` is the compact entry point for the agent's own continuity.
+## Three Speeds
 
-It should cover:
+| Layer | Written | Read |
+| --- | --- | --- |
+| The journal | Every message, by the runtime | `look`, in the wake's one place |
+| Diaries | The note passed to `sleep` | That place, recent days; dreams, everything |
+| `me/` and place memory | Only in dreams | `me/` always; place memory when in that place |
 
-- Stable self-understanding.
-- Current projects and open threads.
-- Recent changes in direction or priorities.
-- Important self-related memories.
-- Links to subject files.
+A diary is what happened. Place memory is what it still knows about there. `me/` is
+who that made it. Each layer is smaller and slower than the one before it, and
+moving something up a layer is a judgment the bot makes in a dream.
 
-Subject files under `memories/self/` hold focused summaries. Prefer the small shared vocabulary below before inventing another subject.
+## Places Are The Privacy Boundary
 
-### User Memory
+Old memory was keyed by user and loaded by participant, so what someone said in one
+group could surface in another. Memory is now keyed by place, and a wake holds one
+place. Only dreams see every place, and they cannot speak.
 
-`memories/users/<user-id>/index.md` is the compact entry point for one user.
+The constitution says what may cross: nothing private may be written into `me/`,
+because `me/` loads everywhere. Group-level knowledge of a person stays in that
+group's place, even when the same person is in two places. Production data shows
+that is rare: only 1 of 14 active senders spans groups.
 
-It should stay short and high-signal. It should cover:
+The cost is real and accepted: in group B it does not know what just happened in
+group A until a dream has passed.
 
-- A brief profile.
-- The user's relationship to the agent.
-- Recent context and current status.
-- Important memories.
-- Cautions or boundaries.
-- Links to subject files.
+## What Goes Into A Wake
 
-Subject files under `memories/users/<user-id>/` hold focused summaries. Prefer:
+A wake's system prompt carries the constitution and `me/`. Entering a chat place
+adds that place's memory, its recent diary, and the unread messages. `/me`, `/web`,
+and `/here` are mounted read-only in `bash` for anything else it wants to check.
 
-- `profile.md`: identity and stable background.
-- `current.md`: current situation, projects, commitments, and open threads.
-- `preferences.md`: interests, habits, likes, dislikes, and boundaries.
-- `relationship.md`: relationship context, durable shared history, and well-supported recurring interaction patterns.
-- `uncertain.md`: potentially useful but unverified hypotheses, including brief evidence and what would confirm them.
-
-Create another subject only for a substantial long-running theme that does not fit these files. Never create one file per event. `index.md` remains the compact overview and links or briefly points to subject detail rather than duplicating it.
-
-The index file should point to subject files instead of duplicating all detail.
-
-## File Style
-
-Memory files are narrative Markdown, not structured CRM records.
-
-The runtime should not force a heavy memory template. Memory quality should be shaped through the dreaming prompt, persona taste, and replay fixtures rather than through rigid file schemas.
-
-They should avoid:
-
-- Numeric affection, intimacy, trust, loyalty, or mood scores.
-- Giant append-only logs.
-- Unlabeled speculation presented as fact.
-- Storing everything forever.
-- Quoting dialogue or preserving a message-by-message chronology.
-- Treating one interaction or one missing reply as a stable personality pattern.
-- Mixing unverified hypotheses into factual profile, preference, or relationship memory.
-
-They should prefer:
-
-- Short paragraphs or bullets.
-- Clear distinction between stable facts, recent state, open threads, and cautions.
-- Links between index files and subject files.
-- Corrections over contradictory layering.
-- Deleting or rewriting stale material when it no longer helps.
-- Merging new evidence into existing prose instead of appending another dated bullet.
-- Promoting, revising, or deleting entries in `uncertain.md` as evidence changes; casual guesses should not be stored at all.
-
-## Context Injection
-
-The runtime should inject only compact memory by default.
-
-For a group turn, the context compiler should include:
-
-- `memories/self/index.md`, if present.
-- `memories/users/<participant-id>/index.md` for participants represented in the compiled group context, if present.
-
-The runtime should not dump every subject file into the prompt.
-
-Subject files are available for deeper inspection through the memory bash tool during dreaming, and later during agent turns if we decide to expose read/search memory tools there.
-
-## Group Transcript Comes First
-
-Before memory injection becomes useful, the group-chat window should be rendered into a stable model-readable transcript.
-
-The transcript should include:
-
-- Conversation id and display name.
-- Window reason and ordered event ids.
-- Stable message id.
-- Timestamp.
-- Sender display name and user id.
-- Mention/reply metadata.
-- Message text.
-
-Memory then attaches to a clear present-tense conversation rather than compensating for vague current context.
+Sizes are bounded by `life_me_max_bytes` and `life_place_max_bytes` so a long life
+does not cost more to carry each year. Diaries and the archive do not count: a diary
+is read by the day and the archive is waiting to be sorted.
 
 ## Dreaming
 
-Dreaming is the terminal phase of a completed active loop. It continues the
-same append-only model session and rollout rather than creating a separate trace
-or rebuilding the prompt.
+A dream is an ordinary wake with different mounts: `/me` and `/places` are
+writable, there is no browser, and `say` and `react` have nowhere to go. It starts
+when the bot chooses `look({ place: "dream" })`, when `life_dream_interval_hours`
+pass, or when the budget runs out.
 
-It receives:
+The dream reads the diaries since the last dream and asks what stayed with it, not
+what is useful. Admission is "is this worth bringing up again", so trivia, jokes,
+and someone's exact words can belong here. What made the bot feel like a group
+member was remembering small things people said weeks earlier. Corrections replace
+what was wrong rather than layering on top of it, stale material is deleted, and
+unverified guesses are labeled.
 
-- The rendered turn transcript.
-- The current participants.
-- The agent's proposed and executed actions.
-- Relevant injected memory index files.
-- The memory filesystem layout.
-- A bash tool with a virtual filesystem containing `/memories`.
+A dream that fails, or that ends with something over its limit, is reverted with
+`git reset --hard` and `git clean`. Refusing to sleep over the limit gives it the
+chance to shorten first. Every wake that changed the home becomes one commit, so
+`git log me/` is its growth history and each change traces back to diaries.
 
-Dreaming is responsible for maintaining useful long-term continuity:
+## Why Identity Only Changes In Dreams
 
-- Create missing user or self memory directories.
-- Update compact index files.
-- Create or revise subject files.
-- Link index files to subject files.
-- Remove or rewrite stale memory.
-- Keep recent context fresh without hoarding every message.
+The day has no write access to `me/`, by mount and not by instruction. A group member
+therefore cannot talk their way into its identity. The words have to survive a
+night in which it decides whether they mattered. The sleep note is the only daytime
+write, and the runtime performs it.
 
-Memory has a high admission threshold: keep only information likely to change a
-future judgment or interaction. Typical candidates are stable identity,
-preferences or boundaries; relationship changes or shared milestones; recurring
-patterns or group norms; durable commitments or open threads; and corrections.
-Dreaming infers these naturally from conversation. It should retain enduring
-meaning rather than quotes, detailed retellings, routine interaction behavior,
-per-interaction records, or facts that matter only to the current exchange.
-Most ordinary conversations should produce no memory write.
+## What It Does Not Remember
 
-Dreaming may run asynchronously. The main chat response should not wait on a long memory-maintenance pass unless a future product decision requires it.
+Nothing it did not look at. The journal records everything, but it does not read the
+journal; it reads places, and only the places it went to. Not having seen something
+is part of being finite, and `look` with `search` can still find it later.
 
-## Bash-Based Memory Editing
+## Harness Evidence
 
-The selected design is to let the dreaming model maintain memory files directly through a `bash` tool.
+Scripted fixtures in `harness/fixtures/scenarios/` prove mechanics:
+`life-dream-changes-me`, `life-oversized-dream-reverts`, `life-day-cannot-write-me`,
+and `verify:migrate` for older homes. `life-model-dream` and the soul evals in
+`harness/src/soul.eval.ts` judge whether real dreams keep what mattered.
 
-We use `just-bash` for this tool. The shell sees a virtual filesystem with a `/memories` folder. That folder is mounted to `GestaltHome/memories` through `ReadWriteFs`; the rest of the shell filesystem is in-memory and does not expose the repository or the full GestaltHome.
-
-Initial bash boundary:
-
-```text
-cwd: /
-writable mount: /memories -> GestaltHome/memories
-network: disabled
-python: disabled
-javascript: disabled
-```
-
-The model may use ordinary shell and text tools such as:
-
-```text
-ls, cat, mkdir, mv, rm, grep, rg, sed, awk, head, tail, wc, diff, sort, printf
-```
-
-This keeps memory editing simple:
-
-```bash
-mkdir -p /memories/users/alice
-cat /memories/users/alice/index.md
-rg "project" /memories/users/alice /memories/self
-printf "\n- 2026-07-06: Alice is refining the memory design.\n" >> /memories/users/alice/index.md
-```
-
-For larger edits, the model should write a temporary file and move it into place:
-
-```bash
-awk '...' /memories/users/alice/index.md > /tmp/index.md && mv /tmp/index.md /memories/users/alice/index.md
-```
-
-The runtime should record:
-
-- Each bash command.
-- Exit code.
-- stdout and stderr.
-- Memory snapshot before dreaming.
-- Memory snapshot after dreaming.
-- Diff or changed file list.
-
-The before/after memory snapshots above are harness evidence only. They are not
-session startup state. The production rollout stores completed memory spans and
-committed dreaming messages incrementally; see
-[PERSISTENCE_AND_TRACES.md](PERSISTENCE_AND_TRACES.md).
-
-## Safety Boundary
-
-The dreaming bash executor is a memory-maintenance tool, not general system
-access. Active loops use a different just-bash instance and VFS; see
-[AGENT_BROWSER.md](AGENT_BROWSER.md).
-
-It must not access:
-
-- `.env` or `.env.local`.
-- Config secrets.
-- Repo source files.
-- Connector state outside memories.
-- Traces except through explicit harness artifacts.
-- Network by default.
-
-The important simplification is that we do not design a custom `MemoryPatch` DSL. Bash is the editing surface; the runtime boundary is the filesystem root plus traceability.
-
-## Harness Implications
-
-Harness fixtures should be able to provide:
-
-- A complete GestaltHome fixture.
-- A memory snapshot under `harness/fixtures/memories/`.
-- Session events that involve known user ids.
-
-Harness artifacts should show:
-
-- Memory files before the run.
-- Memory files after dreaming.
-- Dreaming model request, real response, `bash` tool calls, and `finish_dreaming` completion call.
-- Bash commands used by dreaming.
-- Completed rollout span records for memory injection and dreaming.
-- Whether only allowed memory files changed.
-- Whether corrected or stale claims were actually removed from the final memory files.
-
-The current Phase 2 home snapshots already provide the foundation for this.
-
-## Implementation Order
-
-Implementation order:
-
-1. Build the group transcript renderer. Done.
-2. Load file-backed memory indexes for `self` and participants represented in compiled context. Done.
-3. Inject those indexes into the compiled context. Done.
-4. Add an AI SDK ToolLoopAgent dreaming runner that exposes a `bash` tool and executes tool calls through `just-bash` with `/memories` mounted to `GestaltHome/memories`. Done.
-5. Add harness fixtures that verify real dreaming model output and memory before/after changes. Done.
-6. Add correction and pruning fixtures that verify old wrong or stale wording does not remain after dreaming. Done.
-
-This order keeps the system understandable: first make the model understand the current conversation, then give it relevant long-term memory, then let dreaming maintain that memory.
-
-## Open Questions
-
-- Should active turns ever receive an explicit read-only memory mount?
-- How aggressive should dreaming be about deleting stale memory?
-- Should subject files be selected only by dreaming, or can the main agent request them during a turn?
-- How should private conversation memory be separated from group-safe memory?
-- When should memory changes require human review?
-
-## Reference
-
-- `just-bash`: https://github.com/vercel-labs/just-bash
+Artifacts carry the home before and after, and `life-log` carries the commits. Read
+them yourself; a passing check does not show that a dream was any good.

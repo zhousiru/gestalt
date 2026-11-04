@@ -71,13 +71,21 @@ target parameter, so it can only reach the place the wake is in.
 | `say` | Send text or a sticker to the current place. |
 | `react` | Put a small emoji reaction on a message in the current place. |
 | `sleep` | End the wake, leave a note, choose when to wake. |
-| `bash` | Shell with the wake's mounts, `agent-browser`, and `sticker search`. |
+| `bash` | Shell with the wake's mounts, `sticker search`, and, inside a place, `agent-browser`. |
 
 Visible side effects stay explicit tools, never bash commands, so every one of
 them crosses the durable outbound boundary and appears in the rollout.
 
 There is no `reason` argument. Reasoning belongs in the model's own output, which
 the rollout already records.
+
+The browser needs a place, in practice `web`. Going online is something that
+happened to it, with a diary, and not a phone-side task.
+
+A wake ends with `sleep`. A model that stops without calling anything has not
+decided anything, so it is told once that it is still awake. If it stops again the
+wake ends with the default sleep. `tool_choice: required` is not used because it
+is not portable: OpenRouter has no DeepSeek endpoint that accepts it.
 
 ### Typing
 
@@ -97,10 +105,25 @@ GestaltHome/life/        git repository
   places/<id>/           what it knows about this place; bounded size
   places/<id>/diary/     dated notes left at the end of wakes
   places/web/            what it found online; readable everywhere
+  places/archive/        memory from before the life loop; dreams only
 ```
 
 `persona/` is only the birth value. On first start it is copied into `me/`, and
 from then on `me/` is the identity. `git log me/` is its growth history.
+
+### Migrating An Older Home
+
+`pnpm --filter @gestalt/app migrate:life -- <home>` moves a home from before the
+life loop into this layout. Originals stay where they are.
+
+- Persona files become `me/`, except boundaries, which deflected sincere questions
+  about being an AI. The constitution replaces them.
+- Old memory mixes every group, so it must not enter `me/`, where every wake would
+  load it. It goes to `places/archive/`, which only dreams can see and which is
+  exempt from the size limit. The first wake after migration is a dream that sorts
+  it into the right places.
+- Retired config keys are removed, with a `config.toml.pre-life` backup.
+- A home that already has a life is left alone.
 
 ### Who Can Write What
 
@@ -151,9 +174,10 @@ never retried.
 
 ## Records
 
-- One wake is one rollout. `rollout_started` uses conversation key `life:wake`,
-  and a `rollout_place_entered` record carries the real conversation key once
-  the wake enters a place.
+- One wake is one rollout. `rollout_started` uses conversation key `life:wake`.
+  Web and dream wakes use `life:web` and `life:dream`. A wake that entered a chat
+  stores the real conversation key in the metadata of `rollout_finished`, so
+  listing rollouts by conversation still works.
 - Entering a chat place creates a `message_window` (reason `wake`) for the unread
   messages, and the wake ends with a `turn`, so the journal and Live UI keep
   showing what it read and did.

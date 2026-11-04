@@ -178,7 +178,7 @@ export function renderDreamPrompt(input: {
     "- What do you want to do next? Something to read, someone to ask about something, a thing to follow up. Put it in /me, or you will not remember wanting it.",
     "",
     "Rules:",
-    "- Each place's knowledge stays in that place's folder. /me is carried everywhere, so nothing private about anyone goes there.",
+    "- Each place's knowledge stays in that place's folder. /me is carried everywhere, so it holds who you are, not facts about anyone else: someone's name, job, or news belongs in their place. If a person changed you, write down the change, not the person.",
     "- Do not write down things that did not happen to you.",
     "- Rewrite rather than append. /me and each place have a size limit, and old stale notes are what you throw away.",
     "- If today left nothing, change nothing. That is fine.",

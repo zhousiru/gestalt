@@ -4,7 +4,7 @@
 
 This document records the current OneBot v11 integration shape.
 
-The connector is an I/O protocol boundary. It must not own social behavior, trigger decisions, memory behavior, or agent-loop lifecycle. Those remain in the runtime.
+The connector is an I/O protocol boundary. It must not own social behavior, wake decisions, memory behavior, or the life loop. Those remain in the runtime.
 
 Current implementation entry points:
 
@@ -24,13 +24,10 @@ OneBot raw event
 -> canonical MessageReceived event
 -> bounded ingress queue
 -> runtime.dispatchEvent()
--> existing trigger / active-loop / agent-turn path
+-> the life loop, which is told only that someone may have called
 ```
 
-The dispatch receipt waits for journal admission and active-loop routing, not
-for the whole idle/dreaming lifetime of that loop. The longer outcome is
-observed separately so eight ingress workers cannot be occupied by eight idle
-loops and block later steering messages.
+The dispatch receipt waits for journal admission, not for any wake.
 
 Tool execution leaves the runtime through the connector:
 
@@ -128,11 +125,11 @@ segments rather than reparsing CQ text. It accepts NapCat custom image stickers
 with `image.sub_type=1`, direct `mface`, and marketplace stickers reported as
 images with mface fields. See [STICKER_SYSTEM.md](STICKER_SYSTEM.md).
 
-The model-facing sticker boundary is `search_sticker` followed by
-`send_sticker({ sticker_id })`. Incoming direct `mface`, `image.sub_type=1`,
+The model-facing sticker boundary is `sticker search` in `bash` followed by
+`say({ sticker_id })`. Incoming direct `mface`, `image.sub_type=1`,
 and marketplace-compatible `image` segments remain complete CQ markup in the
 agent-facing transcript. This lets the model use the exact image `file` value
-with `read_image`. For collected-sticker output, the model should still use the
+with `look({ image })`. For collected-sticker output, the model should still use the
 stable-id tools rather than handcrafting a transport payload. The runtime sends native
 mface when available and otherwise sends the cached asset as
 `[CQ:image,...,sub_type=1]`.
@@ -160,7 +157,7 @@ directly by the sticker worker.
 
 Current reading boundary:
 
-- Image and sticker CQ metadata remains visible. The main model calls `read_image` with the exact `file` value, after which its next step receives the image itself as multimodal input.
+- Image and sticker CQ metadata remains visible. The main model calls `look({ image })` with the exact `file` value, after which its next step receives the image itself as multimodal input.
 - Platform emoji input is visible as tags such as `[CQ:face,id=14,name=微笑]`.
 - Mentions are visible as `[CQ:at,qq=...,name=...]`, and `mentionsBot` remains the authoritative bot-addressed signal.
 - Replies are visible as `[CQ:reply,id=...]` and `replyToMessageId`; the quoted original content is only visible if it is already in the session transcript.
@@ -243,7 +240,7 @@ It verifies:
 - Reply, mention, text, image, and platform emoji information survives as CQ-like message text.
 - The model request transcript includes readable, copyable CQ markup.
 - Complete sticker CQ payloads remain present in canonical artifacts and model request transcripts so image reads are possible.
-- The runtime stays on the normal trigger and agent-loop path.
+- The runtime stays on the normal journal and life-loop path.
 - Optional read-only helper tool execution can call `get_msg` or `get_image` before a visible send action.
 - A `fetch_message` result preserves complete mface and custom-sticker CQ text, and `read_image` preserves metadata while attaching connector-returned image bytes to the next main-model step.
 - Complete provider image input remains in harness-only model exchange capture.
@@ -282,7 +279,7 @@ Important artifacts:
 
 The first implementation intentionally does not yet include:
 
-- Automatic vision interpretation without an explicit `read_image` call. Sticker media has its own background analysis pipeline.
+- Automatic vision interpretation without an explicit `look({ image })` call. Sticker media has its own background analysis pipeline.
 - Audio or video download/cache handling.
 - Group administration actions.
 - Friend or group request handling.

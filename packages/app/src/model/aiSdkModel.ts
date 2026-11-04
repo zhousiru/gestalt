@@ -354,7 +354,9 @@ function createAiSdkModelSession(
           // simply stops has not decided anything. It gets one chance to.
           await generate([
             opening,
-            ...first.response.messages.filter(hasContent),
+            ...first.steps
+              .flatMap((step) => step.response.messages)
+              .filter(hasContent),
             { role: "user", content: input.unfinished.content }
           ]);
         }

@@ -5,7 +5,7 @@ TOML file, but they do not share the same inheritance rules.
 
 ## Language-model roles
 
-`main_model_*` configures the main agent, terminal dreaming, and inspect.
+`main_model_*` configures wakes, dreams, and inspect.
 `main_model_name` and `main_model_base_url` are required. The provider defaults
 to `openai-compatible`, the API-key environment variable defaults to
 `MODEL_API_KEY`, temperature defaults to `1`, and max steps defaults to `1000`.

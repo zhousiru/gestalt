@@ -7,14 +7,14 @@ Model-visible fixed text has two owners:
 - Runtime prompts live under `packages/app/src/prompts/`.
 - Eval-only judge prompts and rubrics live under `harness/src/prompts/`.
 
-Persona files, injected memory, conversation transcripts, participant lists, timestamps, and replay evidence are runtime data. They are rendered through typed functions but are not platform prompt policy.
+The constitution, `me/`, place memory, diaries, transcripts, timestamps, and replay evidence are runtime data. They are rendered through typed functions but are not platform prompt policy.
 
 ## Runtime API
 
 Runtime callers use explicit renderers such as:
 
 ```ts
-const prompt = renderActionSystemPrompt({ persona, memories });
+const prompt = renderLifeSystemPrompt({ constitution, me });
 ```
 
 Every renderer returns a `RenderedPrompt` with a stable semantic `id`, normalized
@@ -30,12 +30,12 @@ Tool descriptions and parameter descriptions live in `packages/app/src/prompts/t
 
 Fixed policy must not branch on runtime configuration or available tools. In particular:
 
-- `leave` is always part of the action protocol and exit chain.
-- The action system prompt has one fixed policy path.
-- Dreaming has one terminal continuation task prompt and requires a completed action model session continuation.
-- Initial windows and steered windows use the same transcript renderer.
+- The life system prompt has one fixed policy path, for wakes and dreams alike.
+- Every tool is always offered. A tool that cannot act right now, such as `say` with no place, explains why in its result.
+- What differs between a wake and a dream is the opening message and the mounts.
+- Unread messages, held messages, and search results use the same transcript renderer.
 
-Dynamic data rendering is allowed. Empty persona, memory, participants, or queries use deterministic placeholders rather than selecting another policy prompt. Each action window carries a minute-level current-time block and renders message timestamps in the GestaltHome `timezone`; this dynamic clock belongs in the appended user window rather than the stable system prompt. The runtime resolves an explicit IANA timezone first, then the machine timezone, then UTC, and traces the resolved value and source so replay remains inspectable.
+Dynamic data rendering is allowed. Empty `me/`, memory, or phones use deterministic placeholders rather than selecting another policy prompt. Each wake opening carries a minute-level current time and renders message timestamps in the GestaltHome `timezone`; this dynamic clock belongs in the opening rather than the stable system prompt, so the prompt cache survives from wake to wake. The runtime resolves an explicit IANA timezone first, then the machine timezone, then UTC, and traces the resolved value and source so replay remains inspectable.
 
 ## Change Workflow
 

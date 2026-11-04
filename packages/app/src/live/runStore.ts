@@ -115,8 +115,8 @@ function applyEvent(
     case "agent.run.completed": {
       const run = runs.get(rolloutId);
       if (!run) return;
-      // A model turn completed, but the active loop/rollout may continue with
-      // steering, waiting, or dreaming. rollout.recorded is terminal.
+      // A turn was recorded, but the wake's rollout may still be running.
+      // rollout.recorded is terminal.
       run.status = "running";
       run.phase = "completed";
       run.updatedAt = event.at;

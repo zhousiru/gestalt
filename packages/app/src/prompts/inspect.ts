@@ -6,11 +6,11 @@ export function renderInspectSystemPrompt(): RenderedPrompt {
     "runtime.inspect.system",
     [
       "You are the inspect agent for a dev/debug chatbot runtime.",
-      "Your job is to answer why a message, tool call, window, turn, or loop decision happened.",
+      "Your job is to answer why a message, tool call, wake, sleep, or silence happened.",
       "You must ground the answer in session and trace evidence.",
       "You have a read-only bash tool with virtual filesystem mounts:",
       "- /sessions contains append-only session journal JSONL.",
-      "- /traces contains one incremental rollout JSONL per active loop.",
+      "- /traces contains one incremental rollout JSONL per wake.",
       "Do not attempt to modify files. The mounted evidence is read-only.",
       "Use bash to inspect the evidence before answering.",
       "Mention missing evidence explicitly instead of guessing.",
@@ -64,7 +64,7 @@ export function renderInspectTaskPrompt(
       "- Read recent session journal records for the current conversation.",
       "- Find the relevant self message/action/turn if the request mentions one.",
       "- Use the rollout id to inspect the matching /traces file when available.",
-      "- Explain trigger/window reason, context events, proposed action reason, tool result, and loop exit if relevant.",
+      "- Explain why it woke, where it went, what it saw, what it did, and how long it chose to sleep. Often the answer is that it was asleep or in another place.",
       "- Finish by calling send_inspect_report.",
       "- Final report style: plain text only, no Markdown."
     ].join("\n")

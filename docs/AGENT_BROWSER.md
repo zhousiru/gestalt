@@ -8,7 +8,7 @@ does not add a second provider-facing browser tool protocol.
 The action prompt contains two short browser lines:
 
 ```text
-In chat, agent-browser is available through bash; before first use run: agent-browser skills get core.
+Inside a place, agent-browser is available through bash; before first use run: agent-browser skills get core.
 For web search, run agent-browser open "https://www.google.com/search?q=<keywords>", then inspect the results.
 ```
 
@@ -17,21 +17,25 @@ The skill text is loaded into model history as the ordinary result of that
 
 ## Phase-Scoped Bash
 
-`bash` has one stable name, description, and input schema across the action and
-dreaming phases. Each phase constructs a separate just-bash instance:
+`bash` has one stable name, description, and input schema. Each wake constructs
+its own just-bash instance from what that wake may reach:
 
-| Phase | VFS | Custom commands |
+| When | VFS | Custom commands |
 | --- | --- | --- |
-| Active loop | private in-memory VFS per active loop | `agent-browser` |
-| Dreaming | in-memory base plus writable `/memories` | none |
+| Awake, no place | read-only `/me` and `/web` | `sticker` |
+| Awake in a place | read-only `/me`, `/web`, and in a chat `/here` | `agent-browser`, `sticker` |
+| Dreaming | writable `/me` and `/places` | none |
 | Inspect | in-memory base plus read-only `/sessions` and `/traces` | none |
 
-The active-loop command forwards the parsed argv and stdin directly to the
+The browser needs a place so that going online is something that happened to it,
+with a diary. In practice that place is `web`.
+
+The wake's command forwards the parsed argv and stdin directly to the
 native agent-browser CLI with `shell: false`. Gestalt reserves the browser
 routing fields and invokes every command with:
 
 ```text
---config <packaged-config> --namespace gestalt --session gestalt-<active-loop-id> --provider fortress
+--config <packaged-config> --namespace gestalt --session gestalt-<wake-id> --provider fortress
 ```
 
 Any `--config`, `--namespace`, `--session`, or `--provider` supplied by the
@@ -45,7 +49,7 @@ does not expose an unrestricted host shell.
 The packaged `fortress` plugin implements agent-browser's
 `agent-browser.plugin.v1` `browser.provider` capability:
 
-1. `browser.launch` starts one Tilion Fortress process for the active-loop
+1. `browser.launch` starts one Tilion Fortress process for the wake's
    session with a private profile and random loopback-only CDP port.
 2. The plugin waits for `/json/version` and returns the CDP WebSocket URL plus
    an opaque cleanup token.
@@ -62,14 +66,14 @@ Fortress's CDP endpoint is never exposed as a container port. The plugin does
 not forward agent-browser user-agent overrides into Fortress, so the engine's
 coherent built-in persona remains intact.
 
-The active-loop abort signal is forwarded through just-bash and terminates the
-current native CLI process. If agent-browser was invoked, the tool scope runs
-`agent-browser --provider fortress --namespace gestalt --session
-gestalt-<active-loop-id> close` when the active loop settles. That close flows
-through the provider's cleanup callback. Loops that never invoke agent-browser
-do not start a cleanup process. Cleanup is idempotent, has a bounded timeout,
-and cannot change an already completed loop result. Each browser-using loop
-therefore owns and reclaims exactly one Fortress process and browser session.
+The wake's abort signal is forwarded through just-bash and terminates the current
+native CLI process. If agent-browser was invoked, the tool scope runs
+`agent-browser --provider fortress --namespace gestalt --session gestalt-<wake-id>
+close` when the wake ends. That close flows through the provider's cleanup
+callback. Wakes that never invoke agent-browser do not start a cleanup process.
+Cleanup is idempotent, has a bounded timeout, and cannot change a finished wake.
+Each browser-using wake therefore owns and reclaims exactly one Fortress process
+and browser session.
 
 ## Trace Contract
 

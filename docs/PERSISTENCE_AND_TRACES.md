@@ -6,9 +6,8 @@ Gestalt persists runtime history through two independent append-only stores:
 
 - The **session journal** records received conversation facts and lifecycle
   facts. It is the source for restoring recent chat messages after startup.
-- The **rollout trace** records one complete active model loop, including its
-  initial prompt, committed message deltas, generations, tools, steering,
-  outbound actions, and terminal dreaming continuation.
+- The **rollout trace** records one complete wake, including its initial prompt,
+  committed message deltas, generations, tools, and outbound actions.
 
 Neither format has a sequence field, format-version row, checkpoint, sidecar
 index, or migration path. File order is authoritative. Records relate through
@@ -17,8 +16,9 @@ files must be cleared or archived before adopting this layout; the runtime does
 not parse or rewrite them.
 
 The two stores have different recovery semantics. Session startup restores only
-recent messages. It never revives old timers, active loops, steering attempts,
-or provider sessions. An unfinished rollout is retained as failure evidence and
+recent messages. It never revives a wake or a provider session. The schedule,
+read positions, and budget live separately in `sessions/life-state.json`, and the
+home lives in the `life/` git repository; see [LIFE_LOOP.md](LIFE_LOOP.md). An unfinished rollout is retained as failure evidence and
 is never resumed.
 
 ## GestaltHome Layout And Configuration
@@ -33,7 +33,7 @@ GestaltHome/
     YYYY/
       MM/
         DD/
-          rollout-<timestamp>-<active-loop-id>.jsonl
+          rollout-<timestamp>-<wake-id>.jsonl
     blobs/
       sha256/
         <first-two-hash-characters>/
@@ -53,7 +53,8 @@ trace_binary_capture_enabled = false
 
 `context_recent_message_count` remains the second context bound and may not
 exceed 500. The recent-hours setting controls what startup can restore; the
-message-count setting controls what a newly activated model session receives.
+message-count setting controls how much earlier chat a wake sees above the
+unread messages when it enters a place.
 
 There is no automatic retention or blob garbage collection in this design.
 Operators explicitly archive or delete files. A later cleanup design must be
@@ -64,8 +65,8 @@ separate homes rather than coordinating through these files.
 
 ## Session Journal And Bounded Runtime State
 
-The journal appends immutable records for messages, trigger attempts, message
-windows, completed turns, and loop exits. A message event has a stable record id
+The journal appends immutable records for messages, message windows, completed
+turns, and wakes. A message event has a stable record id
 and canonical message id. Windows and turns carry ordered `eventIds`; their
 meaning never depends on array offsets or a global counter.
 
@@ -81,8 +82,8 @@ The in-memory `SessionStore` is a bounded working set:
 - At most 2,048 message events per conversation.
 - At most 128 records of each lifecycle/diagnostic collection per conversation.
 - At most 64 inactive conversations.
-- Conversations with an active loop are reference-counted pinned and cannot be
-  evicted; overlapping runtime leases cannot accidentally unpin one another.
+- Conversations in use are reference-counted pinned and cannot be evicted;
+  overlapping runtime leases cannot accidentally unpin one another.
 
 On startup, the history reader makes two bounded streaming passes over journal
 days that overlap `session_recent_history_hours`, which defaults to 24. The
@@ -90,8 +91,7 @@ first pass keeps only the 64 most recently touched conversation keys; the
 second hydrates the complete recent prefix for those keys. This avoids a
 late-occurring conversation being retained with only its tail while keeping
 key memory bounded. Only recent message events hydrate the working set. Old
-windows, trigger attempts, turns, loop exits, timers, steer state, active loops,
-and model sessions are not restored. Duplicate message records are ignored by
+windows, turns, wakes, and model sessions are not restored. Duplicate message records are ignored by
 canonical `event.id`; the separate record id continues to identify the original
 journal row.
 
@@ -102,8 +102,7 @@ serialized through the global admission lane and temporarily pinned, so
 restored records precede the new event without weakening the inactive-
 conversation bound or cross-conversation receive order.
 `handleEvent` retains a second ingestion lease through admission, command and
-sticker handling, window creation, and active-loop dispatch. When a loop starts,
-its own pin overlaps that lease before the ingestion lease is released.
+sticker handling, and notifying the life loop.
 
 The history API supports bounded recent-message reads, exact recent-message
 lookup, and server-side text search with opaque cursors. Consumers must not load
@@ -140,9 +139,9 @@ interface RolloutReader {
 
 ## Incremental Rollout Trace
 
-One rollout file corresponds to one active loop, from its first model session
-initialization through steering, tool work, visible actions, loop exit, and final
-dreaming. Records are immutable and use this fixed type set:
+One rollout file corresponds to one wake, from its first model session
+initialization through tool work and visible actions to its sleep. A dream is a
+wake. Records are immutable and use this fixed type set:
 
 ```text
 rollout_started
@@ -156,9 +155,10 @@ span_completed
 rollout_finished
 ```
 
-`model_session_initialized` stores the initial system/persona/memory messages
-and the deterministic provider tool protocol once. Every later user, assistant,
-tool, steer, and dreaming message is appended once as `message_committed`.
+`model_session_initialized` stores the initial system and wake messages and the
+deterministic provider tool protocol once. Every later user, assistant, and tool
+message is appended once as `message_committed`. An empty assistant message from a
+model that stopped silently is not committed, because it is not resent.
 Generation records therefore do not repeat the accumulated request.
 
 Each committed state has a canonical SHA-256 `stateHash`. The initial hash binds
@@ -270,8 +270,8 @@ The active-run summary store is also bounded to 500 entries with a 24-hour stale
 TTL, so a failed terminal notification cannot leak memory indefinitely.
 
 OneBot WebSocket ingress uses eight dispatch workers and a bounded 256-event
-queue. Runtime dispatch waits only for journal admission and active-loop routing;
-the longer loop outcome is observed separately. This preserves prompt steering
+queue. Runtime dispatch waits only for journal admission; wakes are observed
+separately. This preserves prompt delivery
 without dropping handler rejections or accumulating an unbounded chain of loop
 Promises. Queue overflow is surfaced as an explicit diagnostic.
 
@@ -341,7 +341,7 @@ Structured message content remains structured at the capture seam. Tool
 protocol capture includes each actual tool description and JSON input schema,
 not only names. Harness assertions independently recompute every state hash and
 externalize any canonical-request media before writing artifacts. Per-run model
-step diagnostics, active-loop result/turn summaries, writer duplicate guards,
+step diagnostics, wake and turn summaries, writer duplicate guards,
 and recorded-span guards use bounded recent windows; canonical provider messages
 remain the one intentional prefix state owned by the active model session.
 

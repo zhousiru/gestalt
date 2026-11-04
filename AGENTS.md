@@ -5,8 +5,8 @@ This file is the short entry point for coding agents working on Gestalt. Keep it
 ## Start Here
 
 - Read [docs/MASTERDOC.md](docs/MASTERDOC.md) before architectural or behavioral changes.
-- Use [docs/GROUP_CHAT_AGENT_LOOP.md](docs/GROUP_CHAT_AGENT_LOOP.md) for group-session lifecycle, triggering, timed steering, and exit behavior.
-- Use [docs/MEMORY_MODEL.md](docs/MEMORY_MODEL.md) for file-based memory and dreaming.
+- Use [docs/LIFE_LOOP.md](docs/LIFE_LOOP.md) for wakes, places, tools, the home, the budget, and migration.
+- Use [docs/MEMORY_MODEL.md](docs/MEMORY_MODEL.md) for what it remembers and how dreams change it.
 - Use [docs/ONEBOT_CONNECTOR.md](docs/ONEBOT_CONNECTOR.md) for canonical events and OneBot protocol boundaries.
 - Use [docs/STICKER_SYSTEM.md](docs/STICKER_SYSTEM.md) for sticker collection, analysis, retrieval, sending, and observability.
 - Use [docs/AGENT_BROWSER.md](docs/AGENT_BROWSER.md) for phase-scoped bash, browser CLI, tracing, and Docker packaging.

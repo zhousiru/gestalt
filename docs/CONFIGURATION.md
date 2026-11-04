@@ -19,7 +19,7 @@ Gestalt reads `config.toml` from GestaltHome. The file uses flat TOML keys: nest
 
 ## Language models
 
-`main_model_*` configures chat, inspect, and dreaming. `main_model_base_url` and `main_model_name` are required when the model is used. `sub_model_*` configures auxiliary work such as sticker understanding; every omitted sub-model field inherits its resolved main-model value.
+`main_model_*` configures wakes, dreams, and inspect. `main_model_base_url` and `main_model_name` are required when the model is used. `sub_model_*` configures auxiliary work such as sticker understanding; every omitted sub-model field inherits its resolved main-model value.
 
 Both prefixes support these suffixes:
 
@@ -36,7 +36,7 @@ Both prefixes support these suffixes:
 | `routing_allow_fallbacks` | Allow providers outside `routing_order`. | Provider default |
 | `routing_sort` | `price`, `throughput`, `latency`, or an empty string. | Provider default |
 | `thinking` | Provider-specific thinking mode; an empty string disables the override. | Provider default |
-| `tool_choice` | `required`, `auto`, `none`, or an empty string. | Provider default |
+| `tool_choice` | `required`, `auto`, `none`, or an empty string. Leave unset or use `auto` unless the provider accepts `required`; a wake that stops without `sleep` is nudged once either way. | Provider default |
 | `prompt_cache_enabled` | Enable provider prompt caching. | Provider-dependent |
 | `prompt_cache_ttl` | `5m`, `1h`, or an empty string. | Provider default |
 
@@ -62,8 +62,6 @@ The embedding role is independent and does not inherit language-model settings.
 | --- | --- | --- |
 | `sticker_scraping_enabled` | Collect observed stickers for later retrieval. | `false` |
 | `sticker_processing_concurrency` | Parallel sticker-analysis jobs (`1`–`32`). | `1` |
-| `sticker_recommendation_probability` | Chance of attaching sticker candidates after a text send (`0`–`1`). | `0` |
-| `sticker_recommendation_limit` | Maximum candidates per recommendation (`1`–`20`). | `3` |
 | `operator_user_ids` | Users allowed to change sticker scraping with runtime commands. | `[]` |
 
 ## Identity, context, and persistence
@@ -74,38 +72,27 @@ The embedding role is independent and does not inherit language-model settings.
 | `bot_user_id` | Bot ID stored for self-authored session messages. | Connector account ID, then `gestalt-bot` |
 | `bot_display_name` | Bot name stored for self-authored session messages. | `Gestalt` |
 | `session_recent_history_hours` | Journal history restored at startup. | `24` |
-| `context_recent_message_count` | Previous messages added to a new model session (`0`–`500`). | `0` |
+| `context_recent_message_count` | Earlier messages shown above the unread ones when entering a place (`0`–`500`). | `12` |
 | `trace_binary_capture_enabled` | Persist binary trace blobs. Privacy-sensitive. | `false` |
-| `dreaming_enabled` | Run terminal narrative-memory maintenance. | `false` |
 
-## Triggers
+## Life
 
-Probabilities use deterministic sampling in the inclusive range `0`–`1`.
-
-| Key | Description | Default |
-| --- | --- | --- |
-| `trigger_enabled` | Master switch for automatic group triggers. | `true` |
-| `trigger_mention_enabled` | Enable direct-mention triggers. | `true` |
-| `trigger_mention_probability` | Admission probability for mention triggers. | `1` |
-| `trigger_keyword_names` | Comma-separated names matched case-insensitively. | Empty |
-| `trigger_keyword_regex` | Case-insensitive JavaScript regular expression. | Empty |
-| `trigger_keyword_probability` | Admission probability for keyword triggers. | `1` |
-| `trigger_activity_enabled` | Trigger after sufficient recent group activity. | `true` |
-| `trigger_activity_probability` | Admission probability for activity triggers. | `1` |
-| `trigger_activity_window_ms` | Activity counting window in milliseconds. | `600000` |
-| `trigger_activity_min_messages` | Prior-message threshold within the activity window. | `5` |
-| `trigger_icebreaker_enabled` | Trigger after a quiet period. | `true` |
-| `trigger_icebreaker_probability` | Admission probability for icebreaker triggers. | `1` |
-| `trigger_icebreaker_quiet_ms` | Required quiet period in milliseconds. | `3600000` |
-
-## Agent loop
+Every value has a default. See [LIFE_LOOP.md](LIFE_LOOP.md) for what they govern.
+There is deliberately nothing here about probabilities, triggers, or aggregation.
 
 | Key | Description | Default |
 | --- | --- | --- |
-| `agent_loop_aggregation_delay_ms` | Initial delay for gathering nearby messages. | `10000` |
-| `agent_loop_aggregation_max_delay_ms` | Maximum aggregation delay; must not be lower than the initial delay. | Initial delay |
-| `agent_loop_aggregation_backoff_multiplier` | Delay multiplier after additional messages; minimum `1`. | `1` |
-| `agent_loop_exit_say_nothing_enabled` | Exit after repeated `say_nothing` actions. | `true` |
-| `agent_loop_exit_say_nothing_count` | Consecutive `say_nothing` actions required to exit. | `3` |
-| `agent_loop_exit_idle_enabled` | Exit an inactive loop after a timeout. | `true` |
-| `agent_loop_exit_idle_ms` | Idle timeout in milliseconds. | `180000` |
+| `life_daily_token_budget` | Tokens per day. When spent it dreams, then sleeps until the day starts, and calls do not wake it. | `2000000` |
+| `life_day_start_hour` | Local hour the budget and the diary day roll over. | `5` |
+| `life_min_sleep_seconds` | Shortest sleep, also used when someone is still waiting. | `15` |
+| `life_max_sleep_seconds` | Longest sleep. | `28800` |
+| `life_default_sleep_seconds` | Sleep used when a wake ends without choosing one. | `600` |
+| `life_dream_interval_hours` | Longest time between dreams before one is forced. | `24` |
+| `life_typing_ms_per_char` | Time `say` takes per character. | `150` |
+| `life_typing_min_ms` | Shortest typing time. | `800` |
+| `life_typing_max_ms` | Longest typing time. | `8000` |
+| `life_unread_limit` | Most unread messages shown when entering a place. | `40` |
+| `life_wake_max_steps` | Model steps in one wake. | `16` |
+| `life_dream_max_steps` | Model steps in one dream. | `64` |
+| `life_me_max_bytes` | Size limit of `me/`. | `24576` |
+| `life_place_max_bytes` | Size limit of one place, not counting its diary. | `24576` |
