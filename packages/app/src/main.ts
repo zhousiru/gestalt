@@ -12,6 +12,7 @@ import {
   type AppHostConfig
 } from "./home/resolveAppHostConfig";
 import { resolveGestaltHome } from "./home/resolveGestaltHome";
+import { migrateHomeToLife, needsLifeMigration } from "./life/migrate";
 import {
   createLiveEventBus,
   createLiveRunStore,
@@ -30,6 +31,7 @@ interface CliOptions {
   senderId: string;
   mentionsBot: boolean;
   liveUiDir?: string;
+  migrateLife: boolean;
 }
 
 interface LiveSupport {
@@ -48,6 +50,17 @@ async function main(): Promise<void> {
   const home = await resolveGestaltHome(
     options.home ? { homePath: options.home } : {}
   );
+  if (options.migrateLife) {
+    const result = await migrateHomeToLife(home, new Date());
+    console.log(JSON.stringify({ gestaltHome: home.root, ...result }, null, 2));
+    return;
+  }
+  // Starting now would be born fresh beside its old memory and never read it.
+  if (await needsLifeMigration(home)) {
+    throw new Error(
+      `${home.root} predates the life loop. Run with --migrate-life first.`
+    );
+  }
   loadEnv(home);
   const hostConfig = resolveAppHostConfig(await loadConfig(home));
 
@@ -147,7 +160,8 @@ function parseArgs(args: string[]): CliOptions | "help" {
     message: "gestalt 在吗？",
     groupId: "mock-group",
     senderId: "mock-user",
-    mentionsBot: true
+    mentionsBot: true,
+    migrateLife: false
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -183,6 +197,10 @@ function parseArgs(args: string[]): CliOptions | "help" {
     }
     if (arg === "--no-mention") {
       options.mentionsBot = false;
+      continue;
+    }
+    if (arg === "--migrate-life") {
+      options.migrateLife = true;
       continue;
     }
 
@@ -253,6 +271,7 @@ Options:
   --sender <id>        Mock sender id.
   --no-mention         Mark the mock event as not directly mentioning the bot.
   --live-ui-dir <dir>  Override the Live UI assets included in dist.
+  --migrate-life       Move a home from before the life loop into life/ and exit.
 
 Connector, OneBot transport, and live server settings are read from
 GestaltHome/config.toml.

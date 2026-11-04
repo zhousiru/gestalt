@@ -17,6 +17,14 @@ export interface MigrateHomeResult {
   droppedConfigLines: string[];
 }
 
+/** A home with old memory and no life would otherwise be born fresh. */
+export async function needsLifeMigration(home: GestaltHome): Promise<boolean> {
+  return (
+    (await exists(path.join(home.root, "memories"))) &&
+    !(await hasLife(home))
+  );
+}
+
 /**
  * Moves a pre-life home into the life layout. Old memory mixes every group
  * together, so it must not enter `me/`, where it would load everywhere. It goes
@@ -28,7 +36,7 @@ export async function migrateHomeToLife(
   now: Date
 ): Promise<MigrateHomeResult> {
   const meDir = path.join(home.lifeDir, "me");
-  if (await exists(path.join(home.lifeDir, ".git"))) {
+  if (await hasLife(home)) {
     return {
       skipped: true,
       meFiles: [],
@@ -81,6 +89,11 @@ export async function migrateHomeToLife(
     archivedMemoryFiles,
     droppedConfigLines
   };
+}
+
+/** The repository only appears on first start, so migration marks the home this way. */
+function hasLife(home: GestaltHome): Promise<boolean> {
+  return exists(path.join(home.lifeDir, "constitution.md"));
 }
 
 async function retireConfigKeys(configPath: string): Promise<string[]> {

@@ -9,6 +9,7 @@ import {
   createScriptedModel,
   createVirtualClock,
   migrateHomeToLife,
+  needsLifeMigration,
   resolveGestaltHome
 } from "@gestalt/app";
 import { startLifeSimulation } from "./replayRunner";
@@ -42,7 +43,9 @@ try {
   );
 
   const home = await resolveGestaltHome({ homePath: root, create: false });
+  assert.equal(await needsLifeMigration(home), true);
   const migrated = await migrateHomeToLife(home, start);
+  assert.equal(await needsLifeMigration(home), false);
   assert.equal(migrated.skipped, false);
   assert.deepEqual(migrated.meFiles, ["identity.md"]);
   assert.equal(migrated.archivedMemoryFiles, 2);

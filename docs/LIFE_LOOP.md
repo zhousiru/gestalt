@@ -113,8 +113,10 @@ from then on `me/` is the identity. `git log me/` is its growth history.
 
 ### Migrating An Older Home
 
-`pnpm --filter @gestalt/app migrate:life -- <home>` moves a home from before the
-life loop into this layout. Originals stay where they are.
+`node dist/main.js --migrate-life` moves a home from before the life loop into
+this layout and exits. In the image, pass `--migrate-life` to `docker run`. A home
+with old memory and no life refuses to start until this has run, so it cannot be
+born fresh beside what it used to know. Originals stay where they are.
 
 - Persona files become `me/`, except boundaries, which deflected sincere questions
   about being an AI. The constitution replaces them.

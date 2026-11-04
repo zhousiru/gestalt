@@ -90,6 +90,9 @@ export function createLifeStore(options: CreateLifeStoreOptions): LifeStore {
         "user.email=life@gestalt.local",
         "-c",
         "commit.gpgsign=false",
+        // A mounted home may belong to another uid than the container's.
+        "-c",
+        `safe.directory=${root}`,
         "-c",
         "core.autocrlf=false",
         "-c",
