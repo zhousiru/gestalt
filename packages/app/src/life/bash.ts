@@ -45,7 +45,8 @@ export function createWakeBash(input: CreateWakeBashInput): WakeBash {
     provider: "fortress",
     configPath: resolvePackagedAgentBrowserConfigPath(),
     fs: createWakeFs(input.life, input.mounts),
-    browser: input.mounts.kind !== "dream",
+    // Going online is a choice with a place and a diary, not a phone-side task.
+    browser: input.mounts.kind === "place",
     customCommands: createWakeCommands(input),
     ...(input.agentBrowserTarget
       ? { agentBrowserTarget: input.agentBrowserTarget }

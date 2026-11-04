@@ -149,6 +149,7 @@ export function renderDreamPrompt(input: {
   lastDream: string;
   diaries: readonly (LifeFileInput & { place: string })[];
   omittedDiaries: number;
+  archive?: boolean;
 }): string {
   const diaries = input.diaries
     .map((file) => `# ${file.path}\n${file.content.trim()}`)
@@ -171,6 +172,12 @@ export function renderDreamPrompt(input: {
     "- Do not write down things that did not happen to you.",
     "- Rewrite rather than append. /me and each place have a size limit, and old stale notes are what you throw away.",
     "- If today left nothing, change nothing. That is fine.",
+    ...(input.archive
+      ? [
+          "",
+          "/places/archive holds your memories from before you lived like this, with every place mixed together. Move what is worth keeping to where it belongs: what someone is like goes under the place where you know them, who you are goes in /me. Delete each file once you have sorted it, and the folder when it is empty. This can take several dreams."
+        ]
+      : []),
     "",
     `Last dream: ${input.lastDream}`,
     "",

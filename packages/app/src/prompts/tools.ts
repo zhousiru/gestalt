@@ -51,7 +51,7 @@ export const ACTION_TOOL_PROMPTS = {
     }
   },
   bash: {
-    purpose: "Run a shell command in this wake's private environment. Commands available include agent-browser for the real web, and `sticker search <what you feel>` when you are in a chat.",
+    purpose: "Run a shell command in this wake's private environment. Once you are in a place, agent-browser reaches the real web. In a chat, `sticker search <what you feel>` finds stickers.",
     whenUseful: ["You want to read something online, check your own files, or find a sticker."],
     avoidWhen: ["You are guessing at something you could just look up with look."],
     parameters: { command: "Bash command to run." }

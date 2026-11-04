@@ -927,9 +927,10 @@ export async function runWake(
 
     const endedAt = clock.now();
     const note = sleepRequest?.note;
-    if (note && !wasDream) {
+    // A wake that went nowhere has nothing to remember.
+    if (note && place && !wasDream) {
       await life.appendDiary(
-        place ?? WEB_PLACE,
+        place,
         dateInDay(endedAt, config.dayStartHour, timezone),
         `- ${formatZonedDateTime(endedAt, timezone).time} ${note.replace(/\r?\n/g, " ")}`
       );
@@ -1093,7 +1094,8 @@ async function renderDreamOpening(
     ...(reason ? { reason } : {}),
     lastDream: `${formatDuration(now.valueOf() - Date.parse(lastDreamAt))} ago`,
     diaries: inline,
-    omittedDiaries: entries.length - inline.length
+    omittedDiaries: entries.length - inline.length,
+    archive: await life.hasArchive()
   });
 }
 

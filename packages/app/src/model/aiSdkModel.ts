@@ -254,7 +254,9 @@ function createAiSdkModelSession(
         model: options.languageModel,
         instructions: input.instructions.content,
         tools: buildLifeTools(input.tools, execute),
-        ...(toolChoice !== undefined ? { toolChoice } : {}),
+        // Every wake ends with sleep, so a step without a tool call is not a
+        // choice the model can make. Providers that reject this set "auto".
+        toolChoice: toolChoice ?? "required",
         toolOrder: input.tools.map((candidate) => candidate.name),
         ...(providerOptions ? { providerOptions } : {}),
         stopWhen: [

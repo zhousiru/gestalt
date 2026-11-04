@@ -55,6 +55,7 @@ export interface LifeStore {
   appendDiary(place: string, date: string, entry: string): Promise<void>;
   readDiariesSince(date: string): Promise<DiaryEntryFile[]>;
   placeDir(place: string): string;
+  hasArchive(): Promise<boolean>;
   ensurePlace(place: string): Promise<void>;
   findSizeViolations(limits: LifeLimits): Promise<LifeSizeViolation[]>;
   hasChanges(): Promise<boolean>;
@@ -210,6 +211,10 @@ export function createLifeStore(options: CreateLifeStoreOptions): LifeStore {
       return path.join(placesDir, place);
     },
 
+    async hasArchive() {
+      return exists(path.join(placesDir, "archive"));
+    },
+
     async ensurePlace(place) {
       await mkdir(store.placeDir(place), { recursive: true });
     },
@@ -225,6 +230,10 @@ export function createLifeStore(options: CreateLifeStoreOptions): LifeStore {
         });
       }
       for (const place of await listDirectories(placesDir)) {
+        // Migrated memory is waiting to be sorted, not something being carried.
+        if (place === "archive") {
+          continue;
+        }
         const bytes = await measureTree(path.join(placesDir, place), "diary");
         if (bytes > limits.placeMaxBytes) {
           violations.push({

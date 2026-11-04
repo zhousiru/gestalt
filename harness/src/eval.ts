@@ -29,6 +29,5 @@ const failed = runs.flatMap((run) =>
   run.results.filter((result) => result.label === "fail")
 );
 
-if (failed.length > 0) {
-  process.exitCode = 1;
-}
+// A browser daemon may keep inherited handles open after its wake is over.
+process.exit(failed.length > 0 ? 1 : 0);

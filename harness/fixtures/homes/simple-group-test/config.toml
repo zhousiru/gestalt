@@ -5,7 +5,6 @@ main_model_api_key_env = "OPENROUTER_API_KEY"
 main_model_routing_order = "deepseek"
 main_model_routing_allow_fallbacks = false
 main_model_thinking = "disabled"
-main_model_tool_choice = "auto"
 main_model_prompt_cache_enabled = true
 main_model_prompt_cache_ttl = "5m"
 
