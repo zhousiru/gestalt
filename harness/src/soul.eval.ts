@@ -135,6 +135,5 @@ await writeFile(
 for (const result of results) {
   console.log(`${result.rubricId}: ${result.label} ${result.score} - ${result.summary}`);
 }
-if (results.some((result) => result.label === "fail")) {
-  process.exitCode = 1;
-}
+// A browser daemon may keep inherited handles open after its wake is over.
+process.exit(results.some((result) => result.label === "fail") ? 1 : 0);

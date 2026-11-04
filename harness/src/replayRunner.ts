@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
-  appendFile,
   cp,
   mkdir,
   mkdtemp,
@@ -302,6 +301,20 @@ function createFixtureScriptedModel(
   });
 }
 
+/** TOML refuses a repeated key, so an override takes the old line's place. */
+export async function applyConfigOverrides(
+  configPath: string,
+  overrides: string
+): Promise<void> {
+  const keyOf = (line: string): string | undefined =>
+    line.match(/^\s*([A-Za-z0-9_]+)\s*=/)?.[1];
+  const overridden = new Set(overrides.split("\n").map(keyOf));
+  const kept = (await readFile(configPath, "utf8"))
+    .split(/\r?\n/)
+    .filter((line) => !overridden.has(keyOf(line) ?? ""));
+  await writeFile(configPath, `${kept.join("\n")}\n${overrides}\n`, "utf8");
+}
+
 function readLifeLog(lifeDir: string): string[] {
   try {
     return execFileSync("git", ["-C", lifeDir, "log", "--format=%s"], {
@@ -350,10 +363,9 @@ async function createScenarioHome(
     { recursive: true }
   );
   if (fixture.configOverrides) {
-    await appendFile(
+    await applyConfigOverrides(
       path.join(tempHome, "config.toml"),
-      `\n${fixture.configOverrides}\n`,
-      "utf8"
+      fixture.configOverrides
     );
   }
   if (fixture.lifeFixture) {

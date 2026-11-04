@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import {
-  appendFile,
   cp,
   mkdir,
   mkdtemp,
@@ -25,7 +24,11 @@ import {
   type WakeResult
 } from "@gestalt/app";
 import { writeArtifactJson } from "./artifactBinary";
-import { getHarnessPaths, startLifeSimulation } from "./replayRunner";
+import {
+  applyConfigOverrides,
+  getHarnessPaths,
+  startLifeSimulation
+} from "./replayRunner";
 
 const INVENTED_LINES = [
   "今天食堂的面还行",
@@ -92,7 +95,7 @@ const tempHome = await mkdtemp(path.join(os.tmpdir(), "gestalt-journal-replay-")
 try {
   await cp(values.home, tempHome, { recursive: true });
   if (values.config) {
-    await appendFile(path.join(tempHome, "config.toml"), `\n${values.config}\n`);
+    await applyConfigOverrides(path.join(tempHome, "config.toml"), values.config);
   }
   const events = values.rhythm
     ? await readRhythm(values.rhythm, from, to)

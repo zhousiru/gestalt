@@ -19,7 +19,6 @@ const transcriptText = result.modelRequests
   .join("\n");
 const modelFacingWindows = result.modelRequests
   .flatMap((request) => request.messages)
-  .filter((message) => message.role === "user")
   .map((message) => modelContentText(message.content))
   .filter((content) => content.includes("小格看看这张图"));
 

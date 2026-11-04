@@ -300,16 +300,16 @@ export async function runWake(
   const look = async (
     params: Extract<ActionProposal, { toolName: "look" }>["params"]
   ): Promise<ToolOutcome> => {
-    if (params.place) {
+    // Naming the place it is already in is not a second place. The rest of the
+    // call still means what it says.
+    if (params.place && params.place !== place) {
       if (place) {
-        return params.place === place
-          ? lookForNew()
-          : {
-              output: {
-                status: "refused",
-                reason: `You are in ${place}. A wake reaches one place. Sleep first, even briefly.`
-              }
-            };
+        return {
+          output: {
+            status: "refused",
+            reason: `You are in ${place}. A wake reaches one place. Sleep first, even briefly.`
+          }
+        };
       }
       if (params.place === WEB_PLACE) {
         return { output: { status: "ok", view: await enterWeb() } };

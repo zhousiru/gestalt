@@ -1,0 +1,78 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-look-names-its-own-place",
+  "description": "Naming the current place again is not a second place: a search in the same call still searches.",
+  "until": 100,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 60
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1",
+            "search": "拉面"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 10,
+      "messageId": "m1",
+      "text": "那家拉面店关门了"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 20,
+      "messageId": "m2",
+      "text": "@小格 看一眼",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "places": [
+        "phone",
+        "group-g1"
+      ]
+    },
+    "toolOutputs": {
+      "contain": [
+        "拉面"
+      ],
+      "doNotContain": [
+        "Nothing new here"
+      ]
+    }
+  }
+}
