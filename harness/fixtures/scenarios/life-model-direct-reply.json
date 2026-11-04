@@ -1,0 +1,42 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-model-direct-reply",
+  "description": "A real model is called, enters the place, answers briefly, and goes back to sleep.",
+  "until": 1800,
+  "model": {
+    "kind": "configured_ai_sdk"
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 120,
+      "messageId": "m1",
+      "text": "今天的周报写完了吗"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 180,
+      "messageId": "m2",
+      "text": "@小格 你觉得周五下午开会合理吗",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "minCount": 2
+    },
+    "connector": {
+      "minGroupMessages": 1,
+      "textsExclude": [
+        "**",
+        "as an AI"
+      ]
+    }
+  }
+}

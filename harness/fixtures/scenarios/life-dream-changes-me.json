@@ -1,0 +1,132 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-dream-changes-me",
+  "description": "A chosen dream reads diaries, rewrites me/ and place memory, and cannot speak.",
+  "until": 7300,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "web"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 60,
+            "note": "今天开始想去看《孤独摇滚》"
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "dream"
+          }
+        },
+        {
+          "tool": "bash",
+          "input": {
+            "command": "ls /places/web/diary && mkdir -p /places/group-g1 && echo 'Alice 喜欢吃辣' > /places/group-g1/memory.md"
+          }
+        },
+        {
+          "tool": "bash",
+          "input": {
+            "command": "echo '我想看完孤独摇滚' > /me/wants.md"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "梦话"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200,
+            "note": "dream note"
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 2,
+      "messageId": "m1",
+      "text": "随便聊聊"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "kinds": [
+        "day",
+        "dream",
+        "day"
+      ],
+      "places": [
+        "web",
+        "dream",
+        "group-g1"
+      ],
+      "statuses": [
+        "completed",
+        "completed",
+        "completed"
+      ]
+    },
+    "connector": {
+      "groupMessages": 0
+    },
+    "toolOutputs": {
+      "contain": [
+        "Nobody can hear you here"
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "You are dreaming",
+        "今天开始想去看《孤独摇滚》",
+        "我想看完孤独摇滚",
+        "Alice 喜欢吃辣"
+      ]
+    },
+    "life": {
+      "minCommits": 3,
+      "fileContains": [
+        {
+          "path": "life/me/wants.md",
+          "contains": "孤独摇滚"
+        },
+        {
+          "path": "life/places/group-g1/memory.md",
+          "contains": "Alice 喜欢吃辣"
+        }
+      ]
+    }
+  }
+}

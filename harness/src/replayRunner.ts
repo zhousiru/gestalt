@@ -1,6 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
+  appendFile,
   cp,
   mkdir,
   mkdtemp,
@@ -14,29 +16,24 @@ import os from "node:os";
 import path from "node:path";
 import { config as loadDotenvFile } from "dotenv";
 import {
-  createBashDreamingRunner,
-  createAiSdkDreamingRunner,
   createAiSdkModelFromConfig,
   createMockConnector,
-  createMockModel,
-  createMockToolKit,
-  createNoopDreamingRunner,
   createRuntime,
-  getMemoryUserPathSegment,
+  createScriptedModel,
+  createVirtualClock,
   loadConfig,
   resolveGestaltHome,
   SessionJournalRecordSchema,
-  type AgentTurnResult,
-  type AgentTurnTrace,
-  type DreamingRunner,
-  type ModelRequestSnapshot,
-  type ModelResponseSnapshot,
   type MockConnector,
-  type MockToolKit,
+  type ModelClient,
+  type ModelRequestSnapshot,
   type ReconstructedInput,
   type RolloutDetail,
+  type Runtime,
+  type SessionDiagnostics,
   type SessionJournalRecord,
-  type SessionDiagnostics
+  type VirtualClock,
+  type WakeResult
 } from "@gestalt/app";
 import { ScenarioFixtureSchema, type ScenarioFixture } from "./fixtureSchema";
 import {
@@ -52,30 +49,17 @@ export interface ReplayRunResult {
   fixture: ScenarioFixture;
   session: SessionDiagnostics;
   sessionJournal: SessionJournalRecord[];
-  turnTraces: AgentTurnTrace[];
+  wakes: WakeResult[];
+  lifeLog: string[];
   rollouts: RolloutDetail[];
   reconstructedInputs: ReconstructedInput[];
   modelRequests: ModelRequestSnapshot[];
   modelExchanges: ModelExchangeSnapshot[];
-  turnResults: AgentTurnResult[];
   homeBefore: HomeSnapshot;
   homeAfter: HomeSnapshot;
   connector: MockConnector;
-  mockTools: MockToolKit;
   artifactDir: string;
-  artifactPaths: {
-    session: string;
-    sessionJournal: string;
-    turnTraces: string;
-    rollouts: string;
-    reconstructedInputs: string;
-    modelRequests: string;
-    modelExchanges: string;
-    homeBefore: string;
-    homeAfter: string;
-    summary: string;
-    report: string;
-  };
+  artifactPaths: Record<string, string>;
 }
 
 export interface HomeSnapshot {
@@ -90,10 +74,61 @@ export interface HomeFileSnapshot {
   content?: string;
 }
 
-interface ReplayPaths {
-  repoRoot: string;
-  fixturePath: string;
-  artifactRoot: string;
+export interface LifeSimulation {
+  clock: VirtualClock;
+  runtime(): Runtime;
+  advanceTo(at: Date | number): Promise<void>;
+  restart(): Promise<void>;
+  finish(): Promise<void>;
+}
+
+/**
+ * Drives a runtime on a virtual clock: time only moves when nothing is
+ * running, so a model call of any real duration takes no simulated time.
+ */
+export async function startLifeSimulation(input: {
+  clock: VirtualClock;
+  createRuntime: () => Promise<Runtime>;
+}): Promise<LifeSimulation> {
+  const { clock } = input;
+  let runtime = await input.createRuntime();
+  runtime.startLife();
+
+  const settle = async (): Promise<void> => {
+    await new Promise((resolve) => setImmediate(resolve));
+    await runtime.loop.whenQuiescent();
+  };
+
+  const advanceTo = async (at: Date | number): Promise<void> => {
+    const target = new Date(at).valueOf();
+    while (true) {
+      await settle();
+      const due = clock.nextDueAt();
+      if (due === undefined || due > target) {
+        break;
+      }
+      clock.advanceTo(due);
+    }
+    clock.advanceTo(target);
+    await settle();
+  };
+
+  return {
+    clock,
+    runtime: () => runtime,
+    advanceTo,
+    async restart() {
+      await settle();
+      await runtime.shutdown();
+      runtime = await input.createRuntime();
+      runtime.startLife();
+      await settle();
+    },
+    async finish() {
+      await settle();
+      await runtime.shutdown();
+    }
+  };
 }
 
 export async function runScenarioFixture(
@@ -101,50 +136,68 @@ export async function runScenarioFixture(
 ): Promise<ReplayRunResult> {
   const paths = getReplayPaths(fixturePath);
   loadLocalEnv(paths.repoRoot);
+  const fixture = ScenarioFixtureSchema.parse(
+    JSON.parse(await readFile(paths.fixturePath, "utf8"))
+  );
+  return runScenario(fixture, paths);
+}
 
-  const fixture = await readScenarioFixture(paths.fixturePath);
+export async function runScenario(
+  fixture: ScenarioFixture,
+  paths: { repoRoot: string; artifactRoot: string }
+): Promise<ReplayRunResult> {
   const tempHome = await createScenarioHome(paths.repoRoot, fixture);
 
   try {
-    const fixedNow = fixture.now ? new Date(fixture.now) : undefined;
-    const now = fixedNow ? () => new Date(fixedNow) : () => new Date();
-    const home = await resolveGestaltHome({
-      homePath: tempHome,
-      create: false
-    });
+    const clock = createVirtualClock(fixture.start);
+    const now = clock.now;
+    const home = await resolveGestaltHome({ homePath: tempHome, create: false });
     const config = await loadConfig(home);
     const connector = createMockConnector({ now });
-    const mockTools = createMockToolKit();
     const modelCapture = createModelExchangeCapture();
-    const baseModel =
-      fixture.model.kind === "mock"
-        ? createMockModel({ now, delayMs: fixture.model.delayMs ?? 0 })
-        : createAiSdkModelFromConfig(config, {
-            now,
-            onRequest: () => modelCapture.notifyRequestStarted()
-          });
+    const baseModel: ModelClient =
+      fixture.model.kind === "configured_ai_sdk"
+        ? createAiSdkModelFromConfig(config, { now })
+        : createFixtureScriptedModel(fixture, now);
     const model = modelCapture.wrap(baseModel);
-    const dreamingRunner = createFixtureDreamingRunner(fixture, config);
-    const runtime = await createRuntime({
-      gestaltHome: tempHome,
-      connector,
-      model,
-      toolImplementations: mockTools.implementations,
-      dreamingRunner,
-      now
-    });
     const homeBefore = await snapshotHome(tempHome);
-
-    const turnPromises: Promise<AgentTurnResult | undefined>[] = [];
-
-    for (const eventInput of fixture.events) {
-      await delay(eventInput.delayMs);
-      if (eventInput.waitForModelRequestCount !== undefined) {
-        await modelCapture.waitForRequestCount(
-          eventInput.waitForModelRequestCount
-        );
+    const wakes: WakeResult[] = [];
+    let current: Runtime | undefined;
+    const captureWakes = (): void => {
+      if (current) {
+        wakes.push(...current.loop.wakes);
       }
+    };
+
+    const simulation = await startLifeSimulation({
+      clock,
+      async createRuntime() {
+        captureWakes();
+        current = await createRuntime({
+          gestaltHome: tempHome,
+          connector,
+          model,
+          clock
+        });
+        return current;
+      }
+    });
+
+    const startMs = new Date(fixture.start).valueOf();
+    const timeline = [
+      ...fixture.events.map((event) => ({ at: event.at, event })),
+      ...fixture.restarts.map((at) => ({ at, event: undefined }))
+    ].sort((left, right) => left.at - right.at);
+
+    for (const entry of timeline) {
+      await simulation.advanceTo(startMs + entry.at * 1000);
+      if (!entry.event) {
+        await simulation.restart();
+        continue;
+      }
+      const eventInput = entry.event;
       const event = connector.createMessageEvent({
+        conversationKind: eventInput.conversationKind,
         conversationId: eventInput.conversationId,
         ...(eventInput.conversationName
           ? { conversationName: eventInput.conversationName }
@@ -158,54 +211,45 @@ export async function runScenarioFixture(
           : {}),
         mentionsBot: eventInput.mentionsBot
       });
-      // Harness fixtures use their explicit message identity as the stable
-      // canonical event identity so eventIds assertions are deterministic.
       if (eventInput.messageId) {
         event.id = eventInput.messageId;
       }
-      if (fixture.eventHandling === "runtime_triggers") {
-        turnPromises.push(runtime.handleEvent(event));
-        continue;
-      }
-
-      const record = await runtime.ingestEvent(event);
-      turnPromises.push(
-        runtime.handleMessageWindow({
-          conversation: event.conversation,
-          eventIds: [record.event.id],
-          reason: eventInput.windowReason
-        })
-      );
+      await simulation.runtime().dispatchEvent(event);
     }
+    const lastAt = timeline.at(-1)?.at ?? 0;
+    await simulation.advanceTo(startMs + (lastAt + fixture.until) * 1000);
+    const finalRuntime = simulation.runtime();
+    await simulation.finish();
+    captureWakes();
 
-    const turnResults = dedupeTurnResults(await Promise.all(turnPromises));
-    await runtime.whenIdle();
-
-    const session = runtime.exportDiagnostics({
-      exportedAt: new Date().toISOString()
+    const session = finalRuntime.exportDiagnostics({
+      exportedAt: clock.now().toISOString()
     });
     const sessionJournal = await readSessionJournal(home.sessionsDir);
-    const turnTraces = turnResults.map((result) => result.trace);
     const modelExchanges = modelCapture.exchanges;
     const modelRequests = modelExchanges.map((exchange) => exchange.request);
     const { rollouts, reconstructedInputs } =
-      await readAndValidateRolloutCapture(home.tracesDir, modelExchanges);
+      await readAndValidateRolloutCapture(
+        home.tracesDir,
+        modelExchanges,
+        wakes.map((wake) => wake.rolloutId)
+      );
     const homeAfter = await snapshotHome(tempHome);
+    const lifeLog = readLifeLog(path.join(tempHome, "life"));
     const artifactDir = path.join(paths.artifactRoot, fixture.id);
     const artifactPaths = await writeArtifacts({
       artifactDir,
       fixture,
       session,
       sessionJournal,
-      turnTraces,
+      wakes,
+      lifeLog,
       rollouts,
       reconstructedInputs,
       modelRequests,
       modelExchanges,
-      turnResults,
       homeBefore,
       homeAfter,
-      mockTools,
       connector
     });
 
@@ -213,16 +257,15 @@ export async function runScenarioFixture(
       fixture,
       session,
       sessionJournal,
-      turnTraces,
+      wakes,
+      lifeLog,
       rollouts,
       reconstructedInputs,
       modelRequests,
       modelExchanges,
-      turnResults,
       homeBefore,
       homeAfter,
       connector,
-      mockTools,
       artifactDir,
       artifactPaths
     };
@@ -231,73 +274,48 @@ export async function runScenarioFixture(
   }
 }
 
-function createFixtureDreamingRunner(
+function createFixtureScriptedModel(
   fixture: ScenarioFixture,
-  config: Awaited<ReturnType<typeof loadConfig>>
-): DreamingRunner {
-  if (fixture.dreaming.kind === "configured_bash_memory") {
-    return createAiSdkDreamingRunner(config);
+  now: () => Date
+): ModelClient {
+  if (fixture.model.kind !== "scripted") {
+    throw new Error("Fixture does not use a scripted model.");
   }
-
-  if (fixture.dreaming.kind === "mock_bash_memory") {
-    return createBashDreamingRunner({
-      async dream(input) {
-        const participantId = getFirstMessageSenderId(input);
-        const participantSegment = getMemoryUserPathSegment(participantId);
-        const userDirectory = `users/${participantSegment}`;
-
-        await input.bash.exec(`cat self/index.md || true`);
-        await input.bash.exec(`cat ${userDirectory}/index.md || true`);
-        await input.bash.exec(`mkdir -p self ${userDirectory}`);
-        await input.bash.exec(
-          `printf ${shellQuote(
-            "- Dreamed self memory write: verified memory dreaming can update self memory.\\n"
-          )} >> self/index.md`
-        );
-        await input.bash.exec(
-          `printf ${shellQuote(
-            "Self subject note: memory dreaming wrote a self subject file.\\n"
-          )} > self/memory-system.md`
-        );
-        await input.bash.exec(
-          `printf ${shellQuote(
-            "- Dreamed user memory write: verified memory dreaming can update participant memory.\\n"
-          )} >> ${userDirectory}/index.md`
-        );
-        await input.bash.exec(
-          `printf ${shellQuote(
-            "User subject note: memory dreaming wrote a participant subject file.\\n"
-          )} > ${userDirectory}/memory-system.md`
-        );
+  const { wakes, usagePerStep } = fixture.model;
+  return createScriptedModel({
+    now,
+    ...(usagePerStep ? { usagePerStep } : {}),
+    script({ wake, step }) {
+      const steps = wakes[wake - 1];
+      if (!steps) {
+        return step === 0
+          ? { toolName: "sleep", input: { seconds: 3600 } }
+          : undefined;
       }
-    });
+      const next = steps[step];
+      return next ? { toolName: next.tool, input: next.input } : undefined;
+    }
+  });
+}
+
+function readLifeLog(lifeDir: string): string[] {
+  try {
+    return execFileSync("git", ["-C", lifeDir, "log", "--format=%s"], {
+      encoding: "utf8",
+      windowsHide: true
+    })
+      .split(/\r?\n/)
+      .filter(Boolean);
+  } catch {
+    return [];
   }
-
-  return createNoopDreamingRunner();
 }
 
-function getFirstMessageSenderId(input: {
-  eventRecords: AgentTurnResult["eventRecords"];
-}): string {
-  const record = input.eventRecords.find(
-    (candidate) => candidate.event.type === "MessageReceived"
-  );
-  if (record?.event.type === "MessageReceived") {
-    return record.event.sender.id;
-  }
-  return "unknown";
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-async function readScenarioFixture(fixturePath: string): Promise<ScenarioFixture> {
-  const raw = await readFile(fixturePath, "utf8");
-  return ScenarioFixtureSchema.parse(JSON.parse(raw));
-}
-
-function getReplayPaths(fixturePath: string): ReplayPaths {
+function getReplayPaths(fixturePath: string): {
+  repoRoot: string;
+  fixturePath: string;
+  artifactRoot: string;
+} {
   const repoRoot = path.resolve(import.meta.dirname, "..", "..");
   return {
     repoRoot,
@@ -306,85 +324,42 @@ function getReplayPaths(fixturePath: string): ReplayPaths {
   };
 }
 
+export function getHarnessPaths(): {
+  repoRoot: string;
+  artifactRoot: string;
+} {
+  const repoRoot = path.resolve(import.meta.dirname, "..", "..");
+  return { repoRoot, artifactRoot: path.join(repoRoot, "harness", "artifacts") };
+}
+
 async function createScenarioHome(
   repoRoot: string,
   fixture: ScenarioFixture
 ): Promise<string> {
   const tempHome = await mkdtemp(path.join(os.tmpdir(), "gestalt-replay-"));
-
-  if (fixture.homeFixture) {
-    await cp(path.join(repoRoot, fixture.homeFixture), tempHome, {
-      recursive: true
-    });
-  }
-
-  const configFixture =
-    fixture.configFixture ??
-    (fixture.homeFixture ? undefined : ".gestalt/config.toml");
-  if (configFixture) {
-    await cp(
-      path.join(repoRoot, configFixture),
-      path.join(tempHome, "config.toml")
-    );
-  }
-
-  if (fixture.personaFixture) {
-    await rm(path.join(tempHome, "persona"), { recursive: true, force: true });
-    await cp(
-      path.join(repoRoot, fixture.personaFixture),
-      path.join(tempHome, "persona"),
-      { recursive: true }
-    );
-  }
-
-  if (fixture.memoriesFixture) {
-    await rm(path.join(tempHome, "memories"), { recursive: true, force: true });
-    await cp(
-      path.join(repoRoot, fixture.memoriesFixture),
-      path.join(tempHome, "memories"),
-      { recursive: true }
-    );
-  }
-
-  if (fixture.sessionJournalFixture) {
-    await installSessionJournalFixture(
-      path.join(repoRoot, fixture.sessionJournalFixture),
-      tempHome
-    );
-  }
-
-  return tempHome;
-}
-
-async function installSessionJournalFixture(
-  fixturePath: string,
-  homeRoot: string
-): Promise<void> {
-  const raw = await readFile(fixturePath, "utf8");
-  const firstLine = raw.split(/\r?\n/).find((line) => line.trim());
-  if (!firstLine) {
-    throw new Error(`Session journal fixture is empty: ${fixturePath}`);
-  }
-  const firstRecord = JSON.parse(firstLine) as { recordedAt?: unknown };
-  if (typeof firstRecord.recordedAt !== "string") {
-    throw new Error(
-      `Session journal fixture has no recordedAt timestamp: ${fixturePath}`
-    );
-  }
-  const timestamp = new Date(firstRecord.recordedAt);
-  if (Number.isNaN(timestamp.valueOf())) {
-    throw new Error(
-      `Session journal fixture has an invalid recordedAt timestamp: ${fixturePath}`
-    );
-  }
-  const targetDir = path.join(
-    homeRoot,
-    "sessions",
-    "journal",
-    timestamp.toISOString().slice(0, 10)
+  await cp(
+    path.join(
+      repoRoot,
+      fixture.homeFixture ?? "harness/fixtures/homes/simple-group-test"
+    ),
+    tempHome,
+    { recursive: true }
   );
-  await mkdir(targetDir, { recursive: true });
-  await cp(fixturePath, path.join(targetDir, "000001.jsonl"));
+  if (fixture.configOverrides) {
+    await appendFile(
+      path.join(tempHome, "config.toml"),
+      `\n${fixture.configOverrides}\n`,
+      "utf8"
+    );
+  }
+  if (fixture.lifeFixture) {
+    await cp(
+      path.join(repoRoot, fixture.lifeFixture),
+      path.join(tempHome, "life"),
+      { recursive: true }
+    );
+  }
+  return tempHome;
 }
 
 async function readSessionJournal(
@@ -445,22 +420,17 @@ async function collectHomeFiles(
   const files: HomeFileSnapshot[] = [];
   for (const entry of entries) {
     const absolutePath = path.join(directory, entry.name);
-    const relativePath = normalizeRelativePath(
-      path.relative(root, absolutePath)
-    );
-    if (isSecretPath(relativePath)) {
+    const relativePath = path.relative(root, absolutePath).split(path.sep).join("/");
+    if (isSecretPath(relativePath) || entry.name === ".git") {
       continue;
     }
-
     if (entry.isDirectory()) {
       files.push(...(await collectHomeFiles(root, absolutePath)));
       continue;
     }
-
     if (!entry.isFile()) {
       continue;
     }
-
     const content = await readFile(absolutePath);
     const fileStat = await stat(absolutePath);
     const snapshot: HomeFileSnapshot = {
@@ -468,13 +438,16 @@ async function collectHomeFiles(
       bytes: fileStat.size,
       sha256: createHash("sha256").update(content).digest("hex")
     };
-    const text = captureTextContent(relativePath, content);
-    if (text !== undefined) {
-      snapshot.content = text;
+    if (
+      content.length <= 64 * 1024 &&
+      [".json", ".jsonl", ".md", ".txt", ".toml"].includes(
+        path.extname(relativePath).toLowerCase()
+      )
+    ) {
+      snapshot.content = content.toString("utf8");
     }
     files.push(snapshot);
   }
-
   return files;
 }
 
@@ -483,214 +456,116 @@ async function writeArtifacts(input: {
   fixture: ScenarioFixture;
   session: SessionDiagnostics;
   sessionJournal: SessionJournalRecord[];
-  turnTraces: AgentTurnTrace[];
+  wakes: WakeResult[];
+  lifeLog: string[];
   rollouts: RolloutDetail[];
   reconstructedInputs: ReconstructedInput[];
   modelRequests: ModelRequestSnapshot[];
   modelExchanges: ModelExchangeSnapshot[];
-  turnResults: AgentTurnResult[];
   homeBefore: HomeSnapshot;
   homeAfter: HomeSnapshot;
-  mockTools: MockToolKit;
   connector: MockConnector;
-}): Promise<ReplayRunResult["artifactPaths"]> {
+}): Promise<Record<string, string>> {
   await rm(input.artifactDir, { recursive: true, force: true });
   await mkdir(input.artifactDir, { recursive: true });
-
+  const file = (name: string): string => path.join(input.artifactDir, name);
   const artifactPaths = {
-    session: path.join(input.artifactDir, "session.json"),
-    sessionJournal: path.join(input.artifactDir, "session-journal.json"),
-    turnTraces: path.join(input.artifactDir, "turn-traces.json"),
-    rollouts: path.join(input.artifactDir, "rollouts.json"),
-    reconstructedInputs: path.join(
-      input.artifactDir,
-      "reconstructed-inputs.json"
-    ),
-    modelRequests: path.join(input.artifactDir, "model-requests.json"),
-    modelExchanges: path.join(input.artifactDir, "model-exchanges.json"),
-    homeBefore: path.join(input.artifactDir, "home-before.json"),
-    homeAfter: path.join(input.artifactDir, "home-after.json"),
-    summary: path.join(input.artifactDir, "summary.json"),
-    report: path.join(input.artifactDir, "report.md")
+    session: file("session.json"),
+    sessionJournal: file("session-journal.json"),
+    wakes: file("wakes.json"),
+    rollouts: file("rollouts.json"),
+    reconstructedInputs: file("reconstructed-inputs.json"),
+    modelRequests: file("model-requests.json"),
+    modelExchanges: file("model-exchanges.json"),
+    connector: file("connector-calls.json"),
+    homeBefore: file("home-before.json"),
+    homeAfter: file("home-after.json"),
+    summary: file("summary.json"),
+    report: file("report.md")
   };
-
   const summary = {
     id: input.fixture.id,
     description: input.fixture.description,
     modelKind: input.fixture.model.kind,
-    conversations: input.session.conversations.length,
-    sessionJournalRecords: input.sessionJournal.length,
-    turnTraces: input.turnTraces.length,
+    wakes: input.wakes.map((wake) => ({
+      reason: wake.reason,
+      kind: wake.kind,
+      place: wake.place,
+      status: wake.status,
+      startedAt: wake.startedAt,
+      said: wake.said,
+      held: wake.held,
+      requestedSleepSeconds: wake.requestedSleepSeconds,
+      tokens: wake.usage.inputTokens + wake.usage.outputTokens,
+      note: wake.note
+    })),
+    lifeLog: input.lifeLog,
     rollouts: input.rollouts.length,
-    reconstructedInputs: input.reconstructedInputs.length,
-    modelRequests: input.modelRequests.length,
     modelExchanges: input.modelExchanges.length,
-    modelResponses: input.modelExchanges.filter((exchange) => exchange.response)
-      .length,
-    modelSessionIds: Array.from(
-      new Set(
-        input.modelRequests
-          .map((request) => request.sessionId)
-          .filter((value): value is string => Boolean(value))
-      )
-    ),
-    cacheHitResponses: input.modelExchanges.filter(
-      (exchange) => (exchange.response?.cacheUsage?.readTokens ?? 0) > 0
-    ).length,
-    cacheReadTokens: input.modelExchanges.reduce(
-      (total, exchange) =>
-        total + (exchange.response?.cacheUsage?.readTokens ?? 0),
+    totalTokens: input.wakes.reduce(
+      (total, wake) => total + wake.usage.inputTokens + wake.usage.outputTokens,
       0
     ),
-    promptContentHashes: Array.from(
-      new Set(
-        input.modelRequests
-          .map((request) => request.prompt?.contentHash)
-          .filter((value): value is string => Boolean(value))
-      )
+    cacheReadTokens: input.wakes.reduce(
+      (total, wake) => total + wake.usage.cachedTokens,
+      0
     ),
-    toolPromptHashes: Array.from(
-      new Set(
-        input.modelRequests
-          .map((request) => request.prompt?.toolPromptHash)
-          .filter((value): value is string => Boolean(value))
-      )
-    ),
-    turnResults: input.turnResults.length,
-    toolCalls: input.mockTools.calls.map((call) => call.toolName),
-    connectorSideEffects: input.connector.sentGroupMessages.length,
-    homeFilesBefore: input.homeBefore.files.length,
-    homeFilesAfter: input.homeAfter.files.length
+    connectorCalls: input.connector.calls.map((call) => ({
+      kind: call.kind,
+      input: call.input
+    }))
   };
-
   await Promise.all([
     writeArtifactJson(artifactPaths.session, input.session),
     writeArtifactJson(artifactPaths.sessionJournal, input.sessionJournal),
-    writeArtifactJson(artifactPaths.turnTraces, input.turnTraces),
+    writeArtifactJson(artifactPaths.wakes, input.wakes),
     writeArtifactJson(artifactPaths.rollouts, input.rollouts),
     writeArtifactJson(artifactPaths.reconstructedInputs, input.reconstructedInputs),
     writeArtifactJson(artifactPaths.modelRequests, input.modelRequests),
     writeArtifactJson(artifactPaths.modelExchanges, input.modelExchanges),
+    writeArtifactJson(artifactPaths.connector, input.connector.calls),
     writeArtifactJson(artifactPaths.homeBefore, input.homeBefore),
     writeArtifactJson(artifactPaths.homeAfter, input.homeAfter),
     writeArtifactJson(artifactPaths.summary, summary),
     writeFile(artifactPaths.report, renderReport(input, summary), "utf8")
   ]);
-
   return artifactPaths;
 }
 
 function renderReport(
   input: {
     fixture: ScenarioFixture;
-    session: SessionDiagnostics;
-    sessionJournal: SessionJournalRecord[];
-    turnTraces: AgentTurnTrace[];
-    rollouts: RolloutDetail[];
-    reconstructedInputs: ReconstructedInput[];
-    modelRequests: ModelRequestSnapshot[];
-    modelExchanges: ModelExchangeSnapshot[];
-    turnResults: AgentTurnResult[];
-    homeBefore: HomeSnapshot;
-    homeAfter: HomeSnapshot;
-    mockTools: MockToolKit;
+    wakes: WakeResult[];
+    lifeLog: string[];
     connector: MockConnector;
   },
-  summary: Record<string, unknown>
+  summary: { totalTokens: number }
 ): string {
-  const conversation = input.session.conversations[0];
-  const turn = conversation?.turns[0];
-  const homeChanges = describeHomeChanges(input.homeBefore, input.homeAfter);
-
   return [
     `# Replay Report: ${input.fixture.id}`,
     "",
     input.fixture.description,
     "",
-    "## Summary",
+    "## Life",
     "",
-    `- Model: ${input.fixture.model.kind}`,
-    `- Conversations: ${summary.conversations}`,
-    `- Session journal records: ${input.sessionJournal.length}`,
-    `- Events: ${conversation?.events.length ?? 0}`,
-    `- Trigger attempts: ${conversation?.triggerAttempts.length ?? 0}`,
-    `- Windows: ${conversation?.windows.length ?? 0}`,
-    `- Turns: ${conversation?.turns.length ?? 0}`,
-    `- Rollouts: ${input.rollouts.length}`,
-    `- Reconstructed model inputs: ${input.reconstructedInputs.length}`,
-    `- Model requests: ${input.modelRequests.length}`,
-    `- Model exchanges: ${input.modelExchanges.length}`,
-    `- Model responses: ${
-      input.modelExchanges.filter((exchange) => exchange.response).length
-    }`,
-    `- Model sessions: ${
-      (summary.modelSessionIds as string[]).join(", ") || "none"
-    }`,
-    `- Prompt-cache hit responses: ${summary.cacheHitResponses}`,
-    `- Prompt-cache read tokens: ${summary.cacheReadTokens}`,
-    `- Tool calls: ${
-      input.mockTools.calls.map((call) => call.toolName).join(", ") || "none"
-    }`,
-    `- Connector side effects: ${input.connector.sentGroupMessages.length}`,
+    `- Wakes: ${input.wakes.length}`,
+    `- Tokens: ${summary.totalTokens}`,
+    `- Commits: ${input.lifeLog.length}`,
     "",
-    "## First Turn",
+    "## Wakes",
     "",
-    `- Status: ${turn?.status ?? "none"}`,
-    `- Event IDs: ${turn?.eventIds.join(", ") || "none"}`,
-    `- Steer count: ${turn?.steerCount ?? 0}`,
-    `- Actions: ${
-      turn?.proposedActions.map((action) => action.toolName).join(", ") ??
-      "none"
-    }`,
+    ...input.wakes.map(
+      (wake) =>
+        `- ${wake.startedAt} ${wake.reason} -> ${wake.place ?? "phone"}: said ${wake.said}, held ${wake.held}, slept ${wake.requestedSleepSeconds ?? "default"}${wake.note ? `, note: ${wake.note}` : ""}`
+    ),
     "",
-    "## GestaltHome",
+    "## Said",
     "",
-    `- Files before: ${input.homeBefore.files.length}`,
-    `- Files after: ${input.homeAfter.files.length}`,
-    `- Added files: ${homeChanges.added.join(", ") || "none"}`,
-    `- Removed files: ${homeChanges.removed.join(", ") || "none"}`,
-    `- Changed files: ${homeChanges.changed.join(", ") || "none"}`,
+    ...input.connector.calls.map(
+      (call) => `- ${call.kind}: ${JSON.stringify(call.input)}`
+    ),
     ""
   ].join("\n");
-}
-
-function describeHomeChanges(before: HomeSnapshot, after: HomeSnapshot): {
-  added: string[];
-  removed: string[];
-  changed: string[];
-} {
-  const beforeByPath = new Map(before.files.map((file) => [file.path, file]));
-  const afterByPath = new Map(after.files.map((file) => [file.path, file]));
-  const added = after.files
-    .filter((file) => !beforeByPath.has(file.path))
-    .map((file) => file.path);
-  const removed = before.files
-    .filter((file) => !afterByPath.has(file.path))
-    .map((file) => file.path);
-  const changed = after.files
-    .filter((file) => {
-      const beforeFile = beforeByPath.get(file.path);
-      return beforeFile !== undefined && beforeFile.sha256 !== file.sha256;
-    })
-    .map((file) => file.path);
-
-  return { added, removed, changed };
-}
-
-function captureTextContent(
-  relativePath: string,
-  content: Buffer
-): string | undefined {
-  if (content.length > 64 * 1024 || !isTextSnapshotPath(relativePath)) {
-    return undefined;
-  }
-
-  return content.toString("utf8");
-}
-
-function isTextSnapshotPath(relativePath: string): boolean {
-  const extension = path.extname(relativePath).toLowerCase();
-  return [".json", ".jsonl", ".md", ".txt", ".toml"].includes(extension);
 }
 
 function isSecretPath(relativePath: string): boolean {
@@ -702,23 +577,6 @@ function isSecretPath(relativePath: string): boolean {
   );
 }
 
-function normalizeRelativePath(relativePath: string): string {
-  return relativePath.split(path.sep).join("/");
-}
-
-function dedupeTurnResults(
-  results: Array<AgentTurnResult | undefined>
-): AgentTurnResult[] {
-  const byTraceId = new Map<string, AgentTurnResult>();
-  for (const result of results) {
-    if (!result) {
-      continue;
-    }
-    byTraceId.set(result.traceId, result);
-  }
-  return Array.from(byTraceId.values());
-}
-
 function loadLocalEnv(repoRoot: string): void {
   for (const fileName of [".env", ".env.local"]) {
     loadDotenvFile({
@@ -727,10 +585,4 @@ function loadLocalEnv(repoRoot: string): void {
       quiet: true
     });
   }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

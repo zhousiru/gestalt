@@ -55,6 +55,7 @@ export interface LifeStore {
   appendDiary(place: string, date: string, entry: string): Promise<void>;
   readDiariesSince(date: string): Promise<DiaryEntryFile[]>;
   placeDir(place: string): string;
+  ensurePlace(place: string): Promise<void>;
   findSizeViolations(limits: LifeLimits): Promise<LifeSizeViolation[]>;
   hasChanges(): Promise<boolean>;
   commit(message: string, at: Date): Promise<string | undefined>;
@@ -127,12 +128,20 @@ export function createLifeStore(options: CreateLifeStoreOptions): LifeStore {
       }
       await mkdir(meDir, { recursive: true });
       await mkdir(path.join(placesDir, WEB_PLACE), { recursive: true });
-      await writeFile(
-        path.join(placesDir, WEB_PLACE, "memory.md"),
-        "",
-        "utf8"
-      );
-      await writeBirthPersona(options.home, meDir, constitutionPath);
+      const webMemory = path.join(placesDir, WEB_PLACE, "memory.md");
+      if (!(await exists(webMemory))) {
+        await writeFile(webMemory, "", "utf8");
+      }
+      // A home migrated or seeded in advance already has a life to continue.
+      if ((await readMarkdownFiles(meDir, "me")).length === 0) {
+        await writeBirthPersona(options.home, meDir, constitutionPath);
+      } else if (!(await exists(constitutionPath))) {
+        await writeFile(
+          constitutionPath,
+          ensureTrailingNewline(DEFAULT_CONSTITUTION),
+          "utf8"
+        );
+      }
       await git(["init", "--quiet", "--initial-branch=life"]);
       await store.commit("born", at);
     },
@@ -199,6 +208,10 @@ export function createLifeStore(options: CreateLifeStoreOptions): LifeStore {
     placeDir(place) {
       assertPlace(place);
       return path.join(placesDir, place);
+    },
+
+    async ensurePlace(place) {
+      await mkdir(store.placeDir(place), { recursive: true });
     },
 
     async findSizeViolations(limits) {

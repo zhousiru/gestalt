@@ -190,6 +190,7 @@ export async function runWake(
 
   const enterChat = async (target: Conversation): Promise<string> => {
     const placeId = placeIdForConversation(target);
+    await life.ensurePlace(placeId);
     place = placeId;
     conversation = target;
     bashMounts = { kind: "place", place: placeId, chat: true };

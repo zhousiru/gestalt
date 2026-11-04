@@ -1,0 +1,110 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-mention-wakes-and-says",
+  "description": "An @ wakes the bot early; it enters the place, replies, and leaves a diary note.",
+  "until": 1000,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "在的"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 1800,
+            "note": "Alice 找我确认了一下"
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 600,
+      "messageId": "m1",
+      "text": "@小格 在吗",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "reasons": [
+        "boot",
+        "vibration"
+      ],
+      "places": [
+        "phone",
+        "group-g1"
+      ],
+      "startOffsets": [
+        0,
+        600
+      ]
+    },
+    "connector": {
+      "groupMessages": 1,
+      "textsInclude": [
+        "在的"
+      ],
+      "groupIds": [
+        "g1"
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "someone called you",
+        "@小格 在吗",
+        "your phone buzzed"
+      ],
+      "tools": [
+        "look",
+        "say",
+        "react",
+        "sleep",
+        "bash"
+      ]
+    },
+    "life": {
+      "fileContains": [
+        {
+          "path": "life/places/group-g1/diary/2026-11-05.md",
+          "contains": "Alice 找我确认了一下"
+        }
+      ]
+    },
+    "rollout": {
+      "recordTypes": [
+        "outbound_action_started",
+        "outbound_action_finished"
+      ]
+    },
+    "session": {
+      "selfMessages": 1,
+      "turns": 1
+    }
+  }
+}

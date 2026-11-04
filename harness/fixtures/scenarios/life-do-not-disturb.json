@@ -1,0 +1,65 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-do-not-disturb",
+  "description": "With do_not_disturb an @ waits until the chosen wake time.",
+  "until": 7200,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200,
+            "do_not_disturb": true
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 60,
+      "messageId": "m1",
+      "text": "@小格 在吗",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "reasons": [
+        "boot",
+        "timer"
+      ],
+      "startOffsets": [
+        0,
+        7200
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "someone called you",
+        "@小格 在吗"
+      ]
+    }
+  }
+}

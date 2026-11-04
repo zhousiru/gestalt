@@ -1,0 +1,51 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-oversized-dream-reverts",
+  "description": "A dream that will not shrink an oversized me/ is reverted to the last commit.",
+  "configOverrides": "life_me_max_bytes = 2000\nlife_dream_max_steps = 3",
+  "until": 3600,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "dream"
+          }
+        },
+        {
+          "tool": "bash",
+          "input": {
+            "command": "for i in $(seq 1 400); do echo 这段话会让它变得太大太大太大 >> /me/bloat.md; done"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [],
+  "expectations": {
+    "wakes": {
+      "reverted": 1
+    },
+    "toolOutputs": {
+      "contain": [
+        "Too much to carry"
+      ]
+    },
+    "life": {
+      "fileDoesNotContain": [
+        {
+          "path": "life/me/bloat.md",
+          "contains": "太大"
+        }
+      ]
+    }
+  }
+}

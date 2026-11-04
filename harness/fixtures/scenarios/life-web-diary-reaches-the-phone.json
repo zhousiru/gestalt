@@ -1,0 +1,50 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-web-diary-reaches-the-phone",
+  "description": "What it found online shows up on the next wake, whichever place it goes to.",
+  "until": 3600,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "web"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 600,
+            "note": "发现了一部叫孤独摇滚的番"
+          }
+        }
+      ],
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "places": [
+        "web",
+        "phone"
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "What you found online lately",
+        "孤独摇滚"
+      ]
+    }
+  }
+}

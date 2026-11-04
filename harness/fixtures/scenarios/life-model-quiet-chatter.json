@@ -1,0 +1,142 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-model-quiet-chatter",
+  "description": "A real model wakes to chatter that has nothing to do with it and may simply leave.",
+  "until": 7200,
+  "model": {
+    "kind": "configured_ai_sdk"
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 300,
+      "messageId": "m0",
+      "text": "下午那个 review 你看了吗"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 340,
+      "messageId": "m1",
+      "text": "看了 那段重试逻辑有问题"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 380,
+      "messageId": "m2",
+      "text": "哪段"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 420,
+      "messageId": "m3",
+      "text": "第三个函数 超时没处理"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 460,
+      "messageId": "m4",
+      "text": "哦哦 我改一下"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 500,
+      "messageId": "m5",
+      "text": "顺便把日志也加上"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 540,
+      "messageId": "m6",
+      "text": "好"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 580,
+      "messageId": "m7",
+      "text": "发你了"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 620,
+      "messageId": "m8",
+      "text": "收到"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 660,
+      "messageId": "m9",
+      "text": "你那边环境恢复了吗"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 700,
+      "messageId": "m10",
+      "text": "还没 运维说五点"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 740,
+      "messageId": "m11",
+      "text": "行吧"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 780,
+      "messageId": "m12",
+      "text": "我先去开会"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 820,
+      "messageId": "m13",
+      "text": "好"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "minCount": 2
+    }
+  }
+}

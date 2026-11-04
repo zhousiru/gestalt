@@ -1,0 +1,93 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-budget-runs-out",
+  "description": "Spending the day's budget forces one dream, then calls cannot wake it until the day rolls over.",
+  "configOverrides": "life_daily_token_budget = 1000",
+  "until": 54000,
+  "model": {
+    "kind": "scripted",
+    "usagePerStep": {
+      "inputTokens": 900,
+      "outputTokens": 200
+    },
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 600
+          }
+        }
+      ],
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200,
+            "note": "dream"
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "早"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 300,
+      "messageId": "m1",
+      "text": "@小格 醒醒",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 4,
+      "kinds": [
+        "day",
+        "dream",
+        "day",
+        "dream"
+      ],
+      "reasons": [
+        "boot",
+        "budget_spent",
+        "timer",
+        "budget_spent"
+      ],
+      "startOffsets": [
+        0,
+        0,
+        54000,
+        54001
+      ]
+    },
+    "connector": {
+      "textsInclude": [
+        "早"
+      ]
+    }
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-chatter-does-not-wake",
+  "description": "Unaddressed chatter stays unread until the bot's own wake time arrives.",
+  "until": 7200,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 3600
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 3600,
+            "note": "just lurking"
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 60,
+      "messageId": "m1",
+      "text": "今天吃什么"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 120,
+      "messageId": "m2",
+      "text": "随便吧"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 180,
+      "messageId": "m3",
+      "text": "外卖又涨价了"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 3,
+      "reasons": [
+        "boot",
+        "timer",
+        "timer"
+      ],
+      "places": [
+        "phone",
+        "group-g1",
+        "phone"
+      ],
+      "startOffsets": [
+        0,
+        3600,
+        7200
+      ]
+    },
+    "connector": {
+      "groupMessages": 0
+    },
+    "modelInput": {
+      "contains": [
+        "3 unread",
+        "外卖又涨价了"
+      ]
+    },
+    "life": {
+      "fileContains": [
+        {
+          "path": "life/places/group-g1/diary/2026-11-05.md",
+          "contains": "just lurking"
+        }
+      ]
+    },
+    "rollout": {
+      "conversationKeys": [
+        "life:wake",
+        "group:g1",
+        "life:wake"
+      ],
+      "recordTypes": [
+        "rollout_started",
+        "generation_completed",
+        "tool_completed",
+        "rollout_finished"
+      ]
+    },
+    "session": {
+      "turns": 1,
+      "windows": 1,
+      "wakeRecords": 3
+    }
+  }
+}

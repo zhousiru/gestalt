@@ -1,0 +1,63 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-say-needs-a-place",
+  "description": "Saying something from the phone or the web reaches nobody.",
+  "until": 3600,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "say",
+          "input": {
+            "text": "有人吗"
+          }
+        },
+        {
+          "tool": "look",
+          "input": {
+            "place": "web"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "网上有人吗"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200,
+            "note": "看了一篇讲 Prompt 缓存的文章"
+          }
+        }
+      ]
+    ]
+  },
+  "events": [],
+  "expectations": {
+    "connector": {
+      "groupMessages": 0
+    },
+    "toolOutputs": {
+      "contain": [
+        "You are not in any chat",
+        "Nobody can hear you here"
+      ]
+    },
+    "life": {
+      "fileContains": [
+        {
+          "path": "life/places/web/diary/2026-11-05.md",
+          "contains": "Prompt 缓存"
+        }
+      ]
+    },
+    "rollout": {
+      "conversationKeys": [
+        "life:web"
+      ]
+    }
+  }
+}

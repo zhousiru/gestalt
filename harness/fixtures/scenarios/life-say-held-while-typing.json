@@ -1,0 +1,87 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-say-held-while-typing",
+  "description": "A message arriving during typing holds the send; the model sees it and rewrites.",
+  "until": 1800,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "这句话打得比较长所以需要一点时间"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "哦解决了就好"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 3600
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 100,
+      "messageId": "m1",
+      "text": "@小格 这个怎么弄",
+      "mentionsBot": true
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 101,
+      "messageId": "m2",
+      "text": "算了我自己解决了"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "held": 1
+    },
+    "connector": {
+      "groupMessages": 1,
+      "textsInclude": [
+        "哦解决了就好"
+      ],
+      "textsExclude": [
+        "这句话打得比较长"
+      ]
+    },
+    "toolOutputs": {
+      "contain": [
+        "held",
+        "算了我自己解决了"
+      ]
+    }
+  }
+}

@@ -17,6 +17,8 @@ export const LifeStateSchema = z
     lastWakeAt: z.string().min(1).optional(),
     lastSleptAt: z.string().min(1).optional(),
     lastDreamAt: z.string().min(1),
+    /** The day whose spent budget already got its dream. */
+    spentDreamDay: z.string().min(1).optional(),
     lastRead: z.record(z.string(), LastReadSchema),
     budget: z
       .object({

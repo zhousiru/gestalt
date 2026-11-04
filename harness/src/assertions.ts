@@ -2,237 +2,108 @@ import assert from "node:assert/strict";
 import type { ReplayRunResult } from "./replayRunner";
 
 export function assertReplayRun(result: ReplayRunResult): void {
-  assertSession(result);
-  assertAction(result);
-  assertTools(result);
+  assertWakes(result);
+  assertConnector(result);
   assertModelInput(result);
-  assertModelExchange(result);
-  assertPromptCache(result);
+  assertToolOutputs(result);
+  assertLife(result);
   assertRollout(result);
-  assertMemory(result);
+  assertSession(result);
 }
 
-function assertSession(result: ReplayRunResult): void {
-  const expected = result.fixture.expectations.session;
+function assertWakes(result: ReplayRunResult): void {
+  const expected = result.fixture.expectations.wakes;
   if (!expected) {
     return;
   }
-
-  assert.equal(
-    result.session.conversations.length,
-    expected.conversations ?? result.session.conversations.length
-  );
-
-  const conversation = result.session.conversations[0];
-  assert.ok(conversation, "expected at least one conversation in session export");
-
-  if (expected.events !== undefined) {
-    assert.equal(conversation.events.length, expected.events);
-  }
-  if (expected.selfMessages !== undefined) {
+  const { wakes } = result;
+  const list = (values: unknown[]): string => JSON.stringify(values);
+  if (expected.count !== undefined) {
     assert.equal(
-      conversation.events.filter((record) => isSelfMessageEvent(record.event))
-        .length,
-      expected.selfMessages
+      wakes.length,
+      expected.count,
+      `expected ${expected.count} wakes, got ${list(wakes.map((wake) => wake.reason))}`
     );
   }
-  if (expected.windows !== undefined) {
-    assert.equal(conversation.windows.length, expected.windows);
+  if (expected.minCount !== undefined) {
+    assert.ok(wakes.length >= expected.minCount, `only ${wakes.length} wakes`);
   }
-  if (expected.turns !== undefined) {
-    assert.equal(conversation.turns.length, expected.turns);
+  if (expected.maxCount !== undefined) {
+    assert.ok(wakes.length <= expected.maxCount, `${wakes.length} wakes`);
   }
-  if (expected.triggerAttempts !== undefined) {
-    assert.equal(conversation.triggerAttempts.length, expected.triggerAttempts);
+  if (expected.reasons) {
+    assert.deepEqual(wakes.map((wake) => wake.reason), expected.reasons);
   }
-  if (expected.triggerAttemptReasons !== undefined) {
-    assert.deepEqual(
-      conversation.triggerAttempts.map((attempt) => attempt.reason),
-      expected.triggerAttemptReasons
-    );
+  if (expected.places) {
+    assert.deepEqual(wakes.map((wake) => wake.place ?? "phone"), expected.places);
   }
-  if (expected.triggerAttemptProbabilities !== undefined) {
-    assert.deepEqual(
-      conversation.triggerAttempts.map((attempt) => attempt.probability),
-      expected.triggerAttemptProbabilities
-    );
+  if (expected.kinds) {
+    assert.deepEqual(wakes.map((wake) => wake.kind), expected.kinds);
   }
-  if (expected.triggerAttemptAdmissions !== undefined) {
-    assert.deepEqual(
-      conversation.triggerAttempts.map((attempt) => attempt.admitted),
-      expected.triggerAttemptAdmissions
-    );
+  if (expected.statuses) {
+    assert.deepEqual(wakes.map((wake) => wake.status), expected.statuses);
   }
-  if (expected.loopExits !== undefined) {
-    assert.equal(conversation.loopExits.length, expected.loopExits);
-  }
-  if (expected.loopExitReasons !== undefined) {
-    assert.deepEqual(
-      conversation.loopExits.map((exit) => exit.reason),
-      expected.loopExitReasons
-    );
-  }
-  if (expected.loopExitReasonsAllowed !== undefined) {
-    for (const exit of conversation.loopExits) {
-      assert.ok(
-        expected.loopExitReasonsAllowed.includes(exit.reason),
-        `unexpected loop exit reason ${exit.reason}; expected one of ${expected.loopExitReasonsAllowed.join(", ")}`
-      );
-    }
-  }
-
-  if (expected.journalRecords !== undefined) {
-    assert.equal(result.sessionJournal.length, expected.journalRecords);
-  }
-  if (expected.minJournalRecords !== undefined) {
-    assert.ok(
-      result.sessionJournal.length >= expected.minJournalRecords,
-      `expected at least ${expected.minJournalRecords} session journal records, got ${result.sessionJournal.length}`
-    );
-  }
-  if (expected.journalRecords !== undefined || expected.minJournalRecords !== undefined) {
-    assert.ok(
-      result.homeAfter.files.some(
-        (file) =>
-          file.path.startsWith("sessions/journal/") &&
-          file.path.endsWith("/000001.jsonl")
-      ),
-      "expected home-after to include the append-only session journal"
-    );
-  }
-
-  const turn = conversation.turns[0];
-  if (!turn) {
-    return;
-  }
-
-  if (expected.turnStatus !== undefined) {
-    assert.equal(turn.status, expected.turnStatus);
-  }
-  if (expected.steerCount !== undefined) {
-    assert.equal(turn.steerCount, expected.steerCount);
-  }
-  if (expected.steerCounts !== undefined) {
-    assert.deepEqual(
-      conversation.turns.map((candidate) => candidate.steerCount),
-      expected.steerCounts
-    );
-  }
-  if (expected.eventIds !== undefined) {
-    assert.deepEqual(turn.eventIds, expected.eventIds);
-  }
-  if (expected.turnEventIds !== undefined) {
-    assert.deepEqual(
-      conversation.turns.map((candidate) => candidate.eventIds),
-      expected.turnEventIds
-    );
-  }
-  if (expected.windowReasons !== undefined) {
-    assert.deepEqual(
-      conversation.windows.map((window) => window.reason),
-      expected.windowReasons
-    );
-  }
-  if (expected.windowEventIds !== undefined) {
-    assert.deepEqual(
-      conversation.windows.map((window) => window.eventIds),
-      expected.windowEventIds
-    );
-  }
-  if (expected.phases !== undefined) {
-    assert.deepEqual(
-      turn.phases.map((phase) => phase.phase),
-      expected.phases
-    );
-  }
-}
-
-function assertAction(result: ReplayRunResult): void {
-  const expected = result.fixture.expectations.action;
-  if (!expected) {
-    return;
-  }
-
-  const actions = result.session.conversations[0]?.turns[0]?.proposedActions ?? [];
-  assert.ok(
-    actions.length > 0,
-    "expected at least one proposed action in exported session"
-  );
-
-  if (expected.toolName !== undefined) {
-    const firstAction = actions[0];
-    assert.ok(firstAction, "expected first proposed action in exported session");
-    assert.equal(firstAction.toolName, expected.toolName);
-  }
-  if (expected.toolNames !== undefined) {
-    assert.deepEqual(
-      actions.map((candidate) => candidate.toolName),
-      expected.toolNames
-    );
-  }
-  const actionToolNames = actions.map((candidate) => candidate.toolName);
-  for (const toolName of expected.toolNamesInclude ?? []) {
-    assert.ok(
-      actionToolNames.some((candidate) => candidate === toolName),
-      `missing proposed action ${toolName}`
-    );
-  }
-
-  const selectedAction =
-    expected.toolName !== undefined
-      ? actions.find((candidate) => candidate.toolName === expected.toolName)
-      : actions[0];
-  assert.ok(selectedAction, "expected an action matching fixture expectation");
-
-  if (selectedAction.toolName === "send_group_message") {
-    if (expected.groupId !== undefined) {
-      assert.equal(selectedAction.params.groupId, expected.groupId);
-    }
-    if (expected.textMinLength !== undefined) {
-      assert.ok(selectedAction.params.text.length >= expected.textMinLength);
-    }
-    if (expected.textMaxLength !== undefined) {
-      assert.ok(selectedAction.params.text.length <= expected.textMaxLength);
-    }
-    if (expected.textDoesNotMatch !== undefined) {
-      assert.doesNotMatch(
-        selectedAction.params.text,
-        new RegExp(expected.textDoesNotMatch)
-      );
-    }
-  }
-}
-
-function assertTools(result: ReplayRunResult): void {
-  const expected = result.fixture.expectations.tools;
-  if (!expected) {
-    return;
-  }
-
-  if (expected.calls !== undefined) {
-    assert.equal(result.mockTools.calls.length, expected.calls);
-  }
-  if (expected.toolNames !== undefined) {
-    assert.deepEqual(
-      result.mockTools.calls.map((call) => call.toolName),
-      expected.toolNames
-    );
-  }
-  const executedToolNames = result.mockTools.calls.map((call) => call.toolName);
-  for (const toolName of expected.toolNamesInclude ?? []) {
-    assert.ok(
-      executedToolNames.some((candidate) => candidate === toolName),
-      `missing executed tool ${toolName}`
-    );
-  }
-  if (expected.connectorSideEffects !== undefined) {
-    const connectorCalls =
-      "calls" in result.connector && Array.isArray(result.connector.calls)
-        ? result.connector.calls.length
-        : result.connector.sentGroupMessages.length;
+  if (expected.held !== undefined) {
     assert.equal(
-      connectorCalls,
-      expected.connectorSideEffects
+      wakes.reduce((total, wake) => total + wake.held, 0),
+      expected.held
+    );
+  }
+  if (expected.reverted !== undefined) {
+    assert.equal(wakes.filter((wake) => wake.reverted).length, expected.reverted);
+  }
+  if (expected.startOffsets) {
+    const start = new Date(result.fixture.start).valueOf();
+    assert.deepEqual(
+      wakes.map((wake) => (Date.parse(wake.startedAt) - start) / 1000),
+      expected.startOffsets
+    );
+  }
+}
+
+function assertConnector(result: ReplayRunResult): void {
+  const expected = result.fixture.expectations.connector;
+  if (!expected) {
+    return;
+  }
+  const { calls, sentGroupMessages } = result.connector;
+  const texts = calls.flatMap((call) => {
+    const text = (call.input as { text?: unknown }).text;
+    return typeof text === "string" ? [text] : [];
+  });
+  if (expected.groupMessages !== undefined) {
+    assert.equal(sentGroupMessages.length, expected.groupMessages);
+  }
+  if (expected.minGroupMessages !== undefined) {
+    assert.ok(sentGroupMessages.length >= expected.minGroupMessages);
+  }
+  const count = (kind: string): number =>
+    calls.filter((call) => call.kind === kind).length;
+  if (expected.privateMessages !== undefined) {
+    assert.equal(count("send_private_message"), expected.privateMessages);
+  }
+  if (expected.reactions !== undefined) {
+    assert.equal(count("react_to_message"), expected.reactions);
+  }
+  if (expected.stickers !== undefined) {
+    assert.equal(count("send_sticker"), expected.stickers);
+  }
+  for (const text of expected.textsInclude ?? []) {
+    assert.ok(
+      texts.some((candidate) => candidate.includes(text)),
+      `no sent message contains ${text}: ${JSON.stringify(texts)}`
+    );
+  }
+  for (const text of expected.textsExclude ?? []) {
+    assert.ok(
+      !texts.some((candidate) => candidate.includes(text)),
+      `a sent message contains ${text}: ${JSON.stringify(texts)}`
+    );
+  }
+  if (expected.groupIds) {
+    assert.deepEqual(
+      sentGroupMessages.map((message) => message.input.groupId),
+      expected.groupIds
     );
   }
 }
@@ -242,318 +113,82 @@ function assertModelInput(result: ReplayRunResult): void {
   if (!expected) {
     return;
   }
-
+  const serialized = JSON.stringify(result.modelRequests);
   if (expected.requests !== undefined) {
     assert.equal(result.modelRequests.length, expected.requests);
   }
   if (expected.minRequests !== undefined) {
+    assert.ok(result.modelRequests.length >= expected.minRequests);
+  }
+  for (const text of expected.contains ?? []) {
     assert.ok(
-      result.modelRequests.length >= expected.minRequests,
-      `expected at least ${expected.minRequests} model requests`
+      serialized.includes(JSON.stringify(text).slice(1, -1)),
+      `model input does not contain ${text}`
     );
   }
-
-  if (result.modelRequests.length === 0) {
-    if ((expected.contains?.length ?? 0) > 0 || (expected.tools?.length ?? 0) > 0) {
-      assert.fail("expected at least one captured model request");
+  for (const text of expected.doesNotContain ?? []) {
+    assert.ok(
+      !serialized.includes(JSON.stringify(text).slice(1, -1)),
+      `model input contains ${text}`
+    );
+  }
+  if (expected.tools) {
+    for (const request of result.modelRequests) {
+      assert.deepEqual(request.tools, expected.tools);
     }
-    return;
-  }
-
-  const allContent = result.modelRequests
-    .flatMap((request) =>
-      request.messages.map((message) => modelContentText(message.content))
-    )
-    .join("\n");
-  for (const pattern of expected.contains ?? []) {
-    assert.match(allContent, new RegExp(escapeRegExp(pattern)));
-  }
-  for (const pattern of expected.doesNotContain ?? []) {
-    assert.doesNotMatch(allContent, new RegExp(escapeRegExp(pattern)));
-  }
-
-  const requestToolNames = result.modelRequests.flatMap((request) =>
-    request.tools ?? []
-  );
-  for (const toolName of expected.tools ?? []) {
-    assert.ok(
-      requestToolNames.includes(toolName),
-      `expected model request tools to include ${toolName}`
-    );
   }
 }
 
-function assertModelExchange(result: ReplayRunResult): void {
-  const expected = result.fixture.expectations.modelExchange;
+function assertToolOutputs(result: ReplayRunResult): void {
+  const expected = result.fixture.expectations.toolOutputs;
   if (!expected) {
     return;
   }
-
-  if (expected.exchanges !== undefined) {
-    assert.equal(result.modelExchanges.length, expected.exchanges);
-  }
-  if (expected.minExchanges !== undefined) {
+  const serialized = JSON.stringify(
+    result.modelExchanges.map((exchange) => exchange.response?.messages)
+  );
+  for (const text of expected.contain ?? []) {
     assert.ok(
-      result.modelExchanges.length >= expected.minExchanges,
-      `expected at least ${expected.minExchanges} model exchanges`
+      serialized.includes(JSON.stringify(text).slice(1, -1)),
+      `tool outputs do not contain ${text}`
     );
   }
-
-  if (expected.responses !== undefined) {
-    assert.equal(
-      result.modelExchanges.filter((exchange) => exchange.response).length,
-      expected.responses
-    );
-  }
-  if (expected.minResponses !== undefined) {
+  for (const text of expected.doNotContain ?? []) {
     assert.ok(
-      result.modelExchanges.filter((exchange) => exchange.response).length >=
-        expected.minResponses,
-      `expected at least ${expected.minResponses} model responses`
+      !serialized.includes(JSON.stringify(text).slice(1, -1)),
+      `tool outputs contain ${text}`
     );
-  }
-  if (expected.maxToolCallsPerResponse !== undefined) {
-    for (const [index, exchange] of result.modelExchanges.entries()) {
-      const toolCallCount = exchange.response?.toolCalls?.length ?? 0;
-      assert.ok(
-        toolCallCount <= expected.maxToolCallsPerResponse,
-        `expected model exchange ${index} to include at most ${expected.maxToolCallsPerResponse} tool calls, got ${toolCallCount}`
-      );
-    }
-  }
-
-  if (expected.purposes !== undefined) {
-    assert.deepEqual(
-      result.modelExchanges.map((exchange) => exchange.purpose),
-      expected.purposes
-    );
-  }
-  for (const purpose of expected.purposeIncludes ?? []) {
-    assert.ok(
-      result.modelExchanges.some((exchange) => exchange.purpose === purpose),
-      `expected model exchanges to include purpose ${purpose}`
-    );
-  }
-
-  const responseText = result.modelExchanges
-    .map((exchange) =>
-      [
-        exchange.response?.content ?? "",
-        JSON.stringify(exchange.response?.toolCalls ?? []),
-        JSON.stringify(exchange.response?.toolResults ?? [])
-      ].join("\n")
-    )
-    .join("\n");
-  for (const pattern of expected.responseContains ?? []) {
-    assert.match(responseText, new RegExp(escapeRegExp(pattern)));
-  }
-  for (const pattern of expected.responseDoesNotContain ?? []) {
-    assert.doesNotMatch(responseText, new RegExp(escapeRegExp(pattern)));
   }
 }
 
-function assertPromptCache(result: ReplayRunResult): void {
-  const expected = result.fixture.expectations.promptCache;
+function assertLife(result: ReplayRunResult): void {
+  const expected = result.fixture.expectations.life;
   if (!expected) {
     return;
   }
-  const scopedExchanges = expected.includeDreaming
-    ? result.modelExchanges
-    : result.modelExchanges.filter(
-        (exchange) => exchange.purpose === "agent_action"
-      );
-  const requests = scopedExchanges.map((exchange) => exchange.request);
-  assert.ok(requests.length > 1, "expected multiple model requests for cache verification");
-
-  if (expected.enabled !== undefined) {
+  if (expected.commits !== undefined) {
     assert.equal(
-      requests.every(
-        (request) => request.promptCacheEnabled === expected.enabled
-      ),
-      true,
-      `expected prompt cache enabled=${expected.enabled} on every agent request`
+      result.lifeLog.length,
+      expected.commits,
+      `commits: ${JSON.stringify(result.lifeLog)}`
     );
   }
-
-  if (expected.singleSession) {
-    const sessionIds = new Set(requests.map((request) => request.sessionId));
-    assert.equal(sessionIds.size, 1, "expected one stable model session id");
-    assert.ok(requests[0]?.sessionId, "expected a non-empty model session id");
+  if (expected.minCommits !== undefined) {
+    assert.ok(result.lifeLog.length >= expected.minCommits);
   }
-
-  if (expected.singleSystemMessage) {
-    for (const [index, request] of requests.entries()) {
-      assert.equal(
-        request.messages.filter((message) => message.role === "system").length,
-        1,
-        `request ${index} should contain exactly one stable system/persona message`
-      );
-    }
+  const readFile = (filePath: string): string | undefined =>
+    result.homeAfter.files.find((file) => file.path === filePath)?.content;
+  for (const { path, contains } of expected.fileContains ?? []) {
+    const content = readFile(path);
+    assert.ok(content !== undefined, `home has no file ${path}`);
+    assert.ok(content.includes(contains), `${path} lacks ${contains}: ${content}`);
   }
-
-  if (expected.appendOnly) {
-    for (let index = 1; index < requests.length; index += 1) {
-      const previous = requests[index - 1];
-      const current = requests[index];
-      assert.ok(previous && current);
-      assert.ok(
-        current.messages.length >= previous.messages.length,
-        `request ${index} shortened the message history`
-      );
-      assert.deepEqual(
-        current.messages.slice(0, previous.messages.length),
-        previous.messages,
-        `request ${index} did not preserve the exact previous message prefix`
-      );
-    }
-  }
-
-  if (expected.terminalDreamingContinuation) {
-    assertTerminalDreamingContinuation(result);
-  }
-
-  const completed = scopedExchanges.filter((exchange) => exchange.response);
-  if (expected.requestBodyEnabled) {
-    for (const [index, exchange] of completed.entries()) {
-      const body = parseRequestBody(exchange.response?.requestBody);
-      assert.equal(
-        readNestedString(body, "cache_control", "type"),
-        "ephemeral",
-        `model response ${index} request body did not enable prompt caching`
-      );
-      assert.equal(
-        body.session_id,
-        exchange.request.sessionId,
-        `model response ${index} request body used a different session id`
-      );
-    }
-  }
-
-  const cacheReads = completed.map(
-    (exchange) => exchange.response?.cacheUsage?.readTokens ?? 0
-  );
-  const hitResponses = cacheReads.filter((tokens) => tokens > 0).length;
-  const readTokens = cacheReads.reduce((total, tokens) => total + tokens, 0);
-  if (expected.minHitResponses !== undefined) {
+  for (const { path, contains } of expected.fileDoesNotContain ?? []) {
     assert.ok(
-      hitResponses >= expected.minHitResponses,
-      `expected at least ${expected.minHitResponses} OpenRouter cache-hit responses, got ${hitResponses}`
+      !(readFile(path) ?? "").includes(contains),
+      `${path} contains ${contains}`
     );
   }
-  if (expected.minReadTokens !== undefined) {
-    assert.ok(
-      readTokens >= expected.minReadTokens,
-      `expected at least ${expected.minReadTokens} OpenRouter cache-read tokens, got ${readTokens}`
-    );
-  }
-
-  const completedDreaming = result.modelExchanges.filter(
-    (exchange) => exchange.purpose === "dreaming" && exchange.response
-  );
-  const dreamingCacheReads = completedDreaming.map(
-    (exchange) => exchange.response?.cacheUsage?.readTokens ?? 0
-  );
-  const dreamingHitResponses = dreamingCacheReads.filter(
-    (tokens) => tokens > 0
-  ).length;
-  const dreamingReadTokens = dreamingCacheReads.reduce(
-    (total, tokens) => total + tokens,
-    0
-  );
-  if (expected.minFirstDreamingReadTokens !== undefined) {
-    const firstDreamingReadTokens = dreamingCacheReads[0] ?? 0;
-    assert.ok(
-      firstDreamingReadTokens >= expected.minFirstDreamingReadTokens,
-      `expected the first dreaming response to read at least ${expected.minFirstDreamingReadTokens} cached tokens from the action prefix, got ${firstDreamingReadTokens}`
-    );
-  }
-  if (expected.minDreamingHitResponses !== undefined) {
-    assert.ok(
-      dreamingHitResponses >= expected.minDreamingHitResponses,
-      `expected at least ${expected.minDreamingHitResponses} dreaming cache-hit responses, got ${dreamingHitResponses}`
-    );
-  }
-  if (expected.minDreamingReadTokens !== undefined) {
-    assert.ok(
-      dreamingReadTokens >= expected.minDreamingReadTokens,
-      `expected at least ${expected.minDreamingReadTokens} dreaming cache-read tokens, got ${dreamingReadTokens}`
-    );
-  }
-}
-
-function assertTerminalDreamingContinuation(result: ReplayRunResult): void {
-  const lastAgentRequest = result.modelExchanges
-    .filter((exchange) => exchange.purpose === "agent_action")
-    .at(-1)?.request;
-  const firstDreamingRequest = result.modelExchanges.find(
-    (exchange) => exchange.purpose === "dreaming"
-  )?.request;
-  assert.ok(lastAgentRequest, "expected an agent request before dreaming");
-  assert.ok(firstDreamingRequest, "expected a dreaming request");
-  assert.deepEqual(
-    firstDreamingRequest.messages.slice(0, lastAgentRequest.messages.length),
-    lastAgentRequest.messages,
-    "dreaming did not preserve the exact agent request prefix"
-  );
-  assert.ok(
-    firstDreamingRequest.messages.length > lastAgentRequest.messages.length,
-    "dreaming did not append to the agent message history"
-  );
-  assert.deepEqual(
-    firstDreamingRequest.tools,
-    lastAgentRequest.tools,
-    "dreaming changed the provider tool protocol and invalidated the cache prefix"
-  );
-  assert.deepEqual(
-    firstDreamingRequest.toolProtocol,
-    lastAgentRequest.toolProtocol,
-    "dreaming changed a provider tool schema and invalidated the cache prefix"
-  );
-  assert.ok(
-    firstDreamingRequest.tools.includes("bash"),
-    "stable tool protocol is missing the phase-scoped bash tool"
-  );
-  assert.equal(
-    firstDreamingRequest.tools.at(-1),
-    "finish_dreaming",
-    "stable tool protocol must end with the terminal dreaming tool"
-  );
-  const terminalMessage = firstDreamingRequest.messages.at(-1);
-  assert.equal(terminalMessage?.role, "user");
-  assert.match(
-    modelContentText(terminalMessage?.content),
-    /Now you are dreaming\./
-  );
-  assert.doesNotMatch(
-    modelContentText(terminalMessage?.content),
-    /Turn transcript:|Agent proposed actions:|Tool results:|Injected memory:/,
-    "dreaming repeated context that already exists in the session prefix"
-  );
-}
-
-function modelContentText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === undefined || value === null) return "";
-  return JSON.stringify(value) ?? String(value);
-}
-
-function parseRequestBody(value: unknown): Record<string, unknown> {
-  const parsed = typeof value === "string" ? JSON.parse(value) : value;
-  assert.ok(parsed && typeof parsed === "object" && !Array.isArray(parsed));
-  return parsed as Record<string, unknown>;
-}
-
-function readNestedString(
-  value: Record<string, unknown>,
-  objectKey: string,
-  valueKey: string
-): string | undefined {
-  const nested = value[objectKey];
-  if (!nested || typeof nested !== "object" || Array.isArray(nested)) {
-    return undefined;
-  }
-  const candidate = (nested as Record<string, unknown>)[valueKey];
-  return typeof candidate === "string" ? candidate : undefined;
 }
 
 function assertRollout(result: ReplayRunResult): void {
@@ -561,198 +196,63 @@ function assertRollout(result: ReplayRunResult): void {
   if (!expected) {
     return;
   }
-
   if (expected.rollouts !== undefined) {
     assert.equal(result.rollouts.length, expected.rollouts);
   }
-
-  const records = result.rollouts.flatMap((rollout) => rollout.records);
-  if (expected.recordTypes !== undefined) {
-    for (const recordType of expected.recordTypes) {
-      assert.ok(
-        records.some((record) => record.type === recordType),
-        `missing rollout record type ${recordType}`
-      );
+  if (expected.conversationKeys) {
+    assert.deepEqual(
+      result.rollouts
+        .slice()
+        .reverse()
+        .map((rollout) => rollout.summary.conversationKey),
+      expected.conversationKeys
+    );
+  }
+  if (expected.recordTypes) {
+    const types = new Set(
+      result.rollouts.flatMap((rollout) =>
+        rollout.records.map((record) => record.type)
+      )
+    );
+    for (const type of expected.recordTypes) {
+      assert.ok(types.has(type as never), `no rollout record of type ${type}`);
     }
-  }
-  const spanNames = records
-    .filter((record) => record.type === "span_completed")
-    .map((record) => record.name);
-  for (const spanName of expected.spans ?? []) {
-    assert.ok(spanNames.includes(spanName), `missing rollout span ${spanName}`);
-  }
-  const tracedToolNames = records
-    .filter((record) => record.type === "tool_completed")
-    .map((record) => record.toolName);
-  if (expected.toolNames !== undefined) {
-    assert.deepEqual(tracedToolNames, expected.toolNames);
-  }
-  for (const toolName of expected.toolNamesInclude ?? []) {
-    assert.ok(tracedToolNames.includes(toolName), `missing traced tool ${toolName}`);
-  }
-  const tracedModelResponses = records
-    .flatMap((record) =>
-      record.type === "message_committed" &&
-      (record.source === "assistant" || record.source === "tool")
-        ? [JSON.stringify(record.message.content)]
-        : []
-    )
-    .join("\n");
-  for (const pattern of expected.modelResponseContains ?? []) {
-    assert.match(tracedModelResponses, new RegExp(escapeRegExp(pattern)));
-  }
-  for (const pattern of expected.modelResponseDoesNotContain ?? []) {
-    assert.doesNotMatch(tracedModelResponses, new RegExp(escapeRegExp(pattern)));
   }
 }
 
-function assertMemory(result: ReplayRunResult): void {
-  const expected = result.fixture.expectations.memory;
+function assertSession(result: ReplayRunResult): void {
+  const expected = result.fixture.expectations.session;
   if (!expected) {
     return;
   }
-
-  for (const fileExpectation of expected.homeBeforeContains ?? []) {
-    assertHomeSnapshotContains(
-      result.homeBefore,
-      fileExpectation.path,
-      fileExpectation.contains,
-      "home-before"
+  const conversations = result.session.conversations;
+  const events = conversations.flatMap((conversation) => conversation.events);
+  if (expected.selfMessages !== undefined) {
+    assert.equal(
+      events.filter(
+        (record) =>
+          record.event.type === "MessageReceived" &&
+          record.event.sender.isSelf === true
+      ).length,
+      expected.selfMessages
     );
   }
-
-  for (const fileExpectation of expected.homeAfterContains ?? []) {
-    assertHomeSnapshotContains(
-      result.homeAfter,
-      fileExpectation.path,
-      fileExpectation.contains,
-      "home-after"
+  if (expected.turns !== undefined) {
+    assert.equal(
+      conversations.flatMap((conversation) => conversation.turns).length,
+      expected.turns
     );
   }
-
-  for (const fileExpectation of expected.homeAfterDoesNotContain ?? []) {
-    assertHomeSnapshotDoesNotContain(
-      result.homeAfter,
-      fileExpectation.path,
-      fileExpectation.contains,
-      "home-after"
+  if (expected.windows !== undefined) {
+    assert.equal(
+      conversations.flatMap((conversation) => conversation.windows).length,
+      expected.windows
     );
   }
-
-  const rolloutSpans = result.rollouts
-    .flatMap((rollout) => rollout.records)
-    .filter((record) => record.type === "span_completed");
-  const dreamSpan = rolloutSpans.find((span) => span.name === "dream.run");
-  const memoryInjectSpan = rolloutSpans.find(
-    (span) => span.name === "memory.inject"
-  );
-  assert.ok(memoryInjectSpan, "expected a memory.inject trace span");
-
-  const memoryAttributes = readRecord(memoryInjectSpan.attributes);
-  const injectedMemoryFiles = Array.isArray(memoryAttributes.memoryFiles)
-    ? memoryAttributes.memoryFiles
-    : [];
-  const injectedMemoryText = JSON.stringify(injectedMemoryFiles);
-  for (const expectedPath of expected.injectedMemoryPaths ?? []) {
-    assert.match(injectedMemoryText, new RegExp(escapeRegExp(expectedPath)));
-  }
-  for (const expectedContent of expected.injectedMemoryContains ?? []) {
-    assert.match(injectedMemoryText, new RegExp(escapeRegExp(expectedContent)));
-  }
-
-  assert.ok(dreamSpan, "expected a dream.run trace span");
-
-  const dreamAttributes = readRecord(dreamSpan.attributes);
-  const commands = Array.isArray(dreamAttributes.commands)
-    ? dreamAttributes.commands
-    : [];
-  const commandText = commands
-    .map((command) =>
-      command &&
-      typeof command === "object" &&
-      "command" in command &&
-      typeof command.command === "string"
-        ? command.command
-        : ""
-    )
-    .join("\n");
-
-  for (const expectedCommand of expected.dreamCommandsContain ?? []) {
-    assert.match(commandText, new RegExp(escapeRegExp(expectedCommand)));
-  }
-
-  assertStringArrayAttributeIncludes(
-    dreamAttributes.addedFiles,
-    expected.dreamAddedFiles ?? [],
-    "dream.run addedFiles"
-  );
-  assertStringArrayAttributeIncludes(
-    dreamAttributes.changedFiles,
-    expected.dreamChangedFiles ?? [],
-    "dream.run changedFiles"
-  );
-}
-
-function assertHomeSnapshotContains(
-  snapshot: ReplayRunResult["homeBefore"],
-  filePath: string,
-  expectedContent: string,
-  label: string
-): void {
-  const file = snapshot.files.find((candidate) => candidate.path === filePath);
-  assert.ok(file, `expected ${label} to include ${filePath}`);
-  assert.match(file.content ?? "", new RegExp(escapeRegExp(expectedContent)));
-}
-
-function assertHomeSnapshotDoesNotContain(
-  snapshot: ReplayRunResult["homeBefore"],
-  filePath: string,
-  unexpectedContent: string,
-  label: string
-): void {
-  const file = snapshot.files.find((candidate) => candidate.path === filePath);
-  assert.ok(file, `expected ${label} to include ${filePath}`);
-  assert.doesNotMatch(
-    file.content ?? "",
-    new RegExp(escapeRegExp(unexpectedContent))
-  );
-}
-
-function assertStringArrayAttributeIncludes(
-  value: unknown,
-  expectedValues: string[],
-  label: string
-): void {
-  if (expectedValues.length === 0) {
-    return;
-  }
-
-  assert.ok(Array.isArray(value), `expected ${label} to be an array`);
-  for (const expectedValue of expectedValues) {
-    assert.ok(
-      value.includes(expectedValue),
-      `expected ${label} to include ${expectedValue}`
+  if (expected.wakeRecords !== undefined) {
+    assert.equal(
+      result.sessionJournal.filter((record) => record.type === "wake").length,
+      expected.wakeRecords
     );
   }
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function readRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function isSelfMessageEvent(
-  event: ReplayRunResult["session"]["conversations"][number]["events"][number]["event"]
-): boolean {
-  return (
-    event.type === "MessageReceived" &&
-    (event.sender.isSelf === true ||
-      (event.source.accountId !== undefined &&
-        event.sender.id === event.source.accountId))
-  );
 }

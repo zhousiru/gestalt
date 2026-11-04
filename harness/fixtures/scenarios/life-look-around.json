@@ -1,0 +1,103 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-look-around",
+  "description": "Inside a place the bot can scroll back, search, and open a specific message.",
+  "configOverrides": "life_unread_limit = 2\ncontext_recent_message_count = 0",
+  "until": 3600,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 600
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "look",
+          "input": {
+            "before": "m3"
+          }
+        },
+        {
+          "tool": "look",
+          "input": {
+            "search": "冰淇淋"
+          }
+        },
+        {
+          "tool": "look",
+          "input": {
+            "message_id": "m1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 10,
+      "messageId": "m1",
+      "text": "第一条提到冰淇淋"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 11,
+      "messageId": "m2",
+      "text": "第二条"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 12,
+      "messageId": "m3",
+      "text": "第三条"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 13,
+      "messageId": "m4",
+      "text": "第四条"
+    }
+  ],
+  "expectations": {
+    "toolOutputs": {
+      "contain": [
+        "only the newest 2 shown",
+        "第一条提到冰淇淋",
+        "第二条",
+        "第四条"
+      ],
+      "doNotContain": [
+        "Nothing here mentions"
+      ]
+    }
+  }
+}

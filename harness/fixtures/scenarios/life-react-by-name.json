@@ -1,0 +1,80 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-react-by-name",
+  "description": "A reaction uses a named emoji, crosses the outbound boundary, and sends no message.",
+  "until": 3600,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 600
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "react",
+          "input": {
+            "message_id": "m1",
+            "emoji": "不存在的表情"
+          }
+        },
+        {
+          "tool": "react",
+          "input": {
+            "message_id": "m1",
+            "emoji": "赞"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 10,
+      "messageId": "m1",
+      "text": "今天升职了"
+    }
+  ],
+  "expectations": {
+    "connector": {
+      "groupMessages": 0,
+      "reactions": 1
+    },
+    "toolOutputs": {
+      "contain": [
+        "Unknown emoji"
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "Emoji you can use with react",
+        "赞"
+      ]
+    },
+    "rollout": {
+      "recordTypes": [
+        "outbound_action_started"
+      ]
+    }
+  }
+}

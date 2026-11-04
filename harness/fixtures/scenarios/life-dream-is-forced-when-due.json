@@ -1,0 +1,86 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-dream-is-forced-when-due",
+  "description": "After the dream interval the next wake is a dream, even if a call woke it.",
+  "configOverrides": "life_dream_interval_hours = 1",
+  "until": 1800,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ],
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200,
+            "note": "ignored in dreams"
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "刚睡醒"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 3700,
+      "messageId": "m1",
+      "text": "@小格 出来",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 3,
+      "kinds": [
+        "day",
+        "dream",
+        "day"
+      ],
+      "reasons": [
+        "boot",
+        "dream_due",
+        "timer"
+      ],
+      "startOffsets": [
+        0,
+        3700,
+        3715
+      ]
+    },
+    "connector": {
+      "textsInclude": [
+        "刚睡醒"
+      ]
+    }
+  }
+}

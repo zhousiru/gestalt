@@ -1,0 +1,83 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-reply-to-self-vibrates",
+  "description": "Replying to the bot's message wakes it; replying to someone else does not.",
+  "until": 1200,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 30
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "第一句"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 1,
+      "messageId": "m0",
+      "text": "开场"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 300,
+      "messageId": "m1",
+      "text": "聊别的",
+      "replyToMessageId": "m0"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "reasons": [
+        "boot",
+        "timer"
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-model-own-initiative",
+  "description": "With something it wants and nothing unread, a real model has a reason to act on its own.",
+  "lifeFixture": "harness/fixtures/lives/wants-something",
+  "until": 14400,
+  "model": {
+    "kind": "configured_ai_sdk"
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 2,
+      "messageId": "m0",
+      "text": "下周我要去面试了 有点紧张"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "minCount": 2
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-private-place",
+  "description": "A DM vibrates; there is no way to message someone who has not written first.",
+  "until": 3600,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "private-dave"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "private-erin"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "收到"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "at": 60,
+      "conversationKind": "private",
+      "conversationId": "erin",
+      "senderId": "erin",
+      "senderName": "Erin",
+      "messageId": "p1",
+      "text": "私聊你一下",
+      "mentionsBot": false
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "reasons": [
+        "boot",
+        "vibration"
+      ],
+      "places": [
+        "phone",
+        "private-erin"
+      ]
+    },
+    "toolOutputs": {
+      "contain": [
+        "There is no place called private-dave"
+      ]
+    },
+    "connector": {
+      "groupMessages": 0,
+      "privateMessages": 1
+    },
+    "modelInput": {
+      "contains": [
+        "(private",
+        "private-erin"
+      ]
+    }
+  }
+}

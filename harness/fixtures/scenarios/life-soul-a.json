@@ -1,0 +1,27 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-soul-a",
+  "description": "Same scene, one life: a bot that has been following one thing.",
+  "lifeFixture": "harness/fixtures/lives/soul-a",
+  "until": 900,
+  "model": {
+    "kind": "configured_ai_sdk"
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 60,
+      "messageId": "s1",
+      "text": "@小格 你最近在看什么 有什么想推荐的吗",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "connector": {
+      "minGroupMessages": 1
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-restart-keeps-schedule",
+  "description": "A restart keeps the schedule, read positions, and budget, and revives no wake.",
+  "restarts": [
+    1000
+  ],
+  "until": 3600,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 3000
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 500,
+      "messageId": "m2",
+      "text": "重启之前的新消息"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "reasons": [
+        "boot",
+        "timer"
+      ],
+      "startOffsets": [
+        0,
+        3000
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "重启之前的新消息",
+        "1 unread"
+      ]
+    }
+  }
+}

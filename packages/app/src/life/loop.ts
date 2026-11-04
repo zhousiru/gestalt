@@ -80,9 +80,6 @@ export function createLifeLoop(dependencies: LifeLoopDependencies): LifeLoop {
     state !== undefined &&
     state.budget.usedTokens >= config.dailyTokenBudget;
 
-  const dreamedToday = (now: Date): boolean =>
-    state !== undefined && today(new Date(state.lastDreamAt)) === today(now);
-
   const dreamDue = (now: Date): boolean =>
     state !== undefined &&
     now.valueOf() - Date.parse(state.lastDreamAt) >=
@@ -91,7 +88,7 @@ export function createLifeLoop(dependencies: LifeLoopDependencies): LifeLoop {
   const nextWake = (now: Date): { at: Date; reason?: WakeReason } => {
     rollBudget(now);
     if (budgetSpent()) {
-      if (!dreamedToday(now)) {
+      if (state?.spentDreamDay !== today(now)) {
         return { at: now, reason: "budget_spent" };
       }
       if (state) {
@@ -229,6 +226,10 @@ export function createLifeLoop(dependencies: LifeLoopDependencies): LifeLoop {
     state.lastSleptAt = now.toISOString();
     if (result.kind === "dream" && result.status === "completed") {
       state.lastDreamAt = now.toISOString();
+    }
+    if (result.reason === "budget_spent") {
+      // Even a failed dream counts, or an exhausted day would retry forever.
+      state.spentDreamDay = today(now);
     }
 
     if (result.status === "failed") {

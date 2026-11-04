@@ -22,7 +22,9 @@ export interface ValidatedRolloutCapture {
  */
 export async function readAndValidateRolloutCapture(
   tracesDir: string,
-  modelExchanges: readonly ModelExchangeSnapshot[]
+  modelExchanges: readonly ModelExchangeSnapshot[],
+  /** Rollout ids in the order they ran; virtual time can give them equal stamps. */
+  rolloutOrder?: readonly string[]
 ): Promise<ValidatedRolloutCapture> {
   const reader = createRolloutReader({ tracesDir });
   const page = await reader.list({ limit: 200 });
@@ -37,7 +39,16 @@ export async function readAndValidateRolloutCapture(
   assertIndependentStateHashes(rollouts);
 
   // The reader lists newest first; generation captures are chronological.
-  for (const rollout of rollouts.slice().reverse()) {
+  const chronological = rolloutOrder
+    ? rollouts
+        .slice()
+        .sort(
+          (left, right) =>
+            rolloutOrder.indexOf(left.summary.id) -
+            rolloutOrder.indexOf(right.summary.id)
+        )
+    : rollouts.slice().reverse();
+  for (const rollout of chronological) {
     for (const record of rollout.records) {
       if (record.type === "generation_completed") {
         generations.push(record);

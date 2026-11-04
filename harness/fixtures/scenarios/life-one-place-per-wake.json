@@ -1,0 +1,84 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-one-place-per-wake",
+  "description": "A wake cannot enter a second place, so one context never holds two places.",
+  "until": 3600,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 600
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g2"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 10,
+      "messageId": "m1",
+      "text": "g1 的秘密是蓝色"
+    },
+    {
+      "at": 20,
+      "conversationId": "g2",
+      "conversationName": "另一个群",
+      "senderId": "carol",
+      "messageId": "n1",
+      "text": "g2 的秘密是红色",
+      "mentionsBot": false
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 2,
+      "places": [
+        "phone",
+        "group-g1"
+      ]
+    },
+    "toolOutputs": {
+      "contain": [
+        "A wake reaches one place"
+      ],
+      "doNotContain": [
+        "g2 的秘密是红色"
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "g1 的秘密是蓝色"
+      ],
+      "doesNotContain": [
+        "g2 的秘密是红色"
+      ]
+    }
+  }
+}

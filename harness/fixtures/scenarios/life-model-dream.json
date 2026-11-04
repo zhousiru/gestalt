@@ -1,0 +1,30 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-model-dream",
+  "description": "A real model dreams over a real diary and is changed by it.",
+  "lifeFixture": "harness/fixtures/lives/after-a-day",
+  "configOverrides": "life_dream_interval_hours = 1",
+  "until": 7200,
+  "model": {
+    "kind": "configured_ai_sdk"
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 3700,
+      "messageId": "m1",
+      "text": "下午好"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "minCount": 2
+    },
+    "life": {
+      "minCommits": 2
+    }
+  }
+}
