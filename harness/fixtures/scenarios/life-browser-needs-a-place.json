@@ -1,0 +1,39 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-browser-needs-a-place",
+  "description": "The browser exists only inside a place, so going online always leaves a diary.",
+  "until": 100,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "bash",
+          "input": {
+            "command": "agent-browser skills get core"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [],
+  "expectations": {
+    "wakes": {
+      "count": 1,
+      "places": [
+        "phone"
+      ]
+    },
+    "toolOutputs": {
+      "contain": [
+        "command not found"
+      ]
+    }
+  }
+}

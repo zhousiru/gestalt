@@ -67,7 +67,7 @@ const dream = renderDreamPrompt({
 });
 assert.match(dream, /Ask what stayed with you/);
 assert.match(dream, /What do you want to do next/);
-assert.match(dream, /nothing private about anyone/);
+assert.match(dream, /not facts about anyone else/);
 assert.match(dream, /Keep the words if the words are the point/);
 assert.doesNotMatch(dream, /Usually change nothing/);
 
