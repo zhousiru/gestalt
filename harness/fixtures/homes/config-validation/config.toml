@@ -16,6 +16,6 @@ sub_model_name = "qwen/qwen3.5-9b"
 # Presence with an empty value clears the inherited main provider order.
 sub_model_routing_order = ""
 
-agent_loop_aggregation_delay_ms = 3000
-agent_loop_aggregation_max_delay_ms = 15000
-agent_loop_aggregation_backoff_multiplier = 1.5
+life_min_sleep_seconds = 20
+life_max_sleep_seconds = 14400
+life_daily_token_budget = 1500000

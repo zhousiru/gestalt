@@ -96,10 +96,10 @@ const invalidCases = {
     ].join("\n"),
     /cannot be used together/
   ),
-  invalidAggregationRange: await loadInvalidConfig(
+  invalidSleepRange: await loadInvalidConfig(
     [
-      "agent_loop_aggregation_delay_ms = 5000",
-      "agent_loop_aggregation_max_delay_ms = 1000",
+      "life_min_sleep_seconds = 5000",
+      "life_max_sleep_seconds = 1000",
       ""
     ].join("\n"),
     /must be greater than or equal/
@@ -132,7 +132,7 @@ await writeFile(
     "- Unknown keys and invalid value types: rejected",
     "- Legacy runtime model_* keys: rejected",
     "- Nested TOML tables: rejected by the flat config schema",
-    "- Invalid aggregation delay ranges: rejected",
+    "- Invalid sleep ranges: rejected",
     "- Direct and environment API keys are mutually exclusive for every model role",
     "- Empty sub routing order clears inheritance: verified",
     ""

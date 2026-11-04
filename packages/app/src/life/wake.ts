@@ -196,6 +196,15 @@ export async function runWake(
     bashMounts = { kind: "place", place: placeId, chat: true };
     rollout.setConversationKey(getConversationKey(target));
     sessionStore.pinConversation(target);
+    dependencies.liveEvents?.publish("agent.run.started", {
+      traceId: id,
+      conversationKey: getConversationKey(target),
+      startedAt,
+      messageCount: selectUnreadRecords(
+        recordsOf(target),
+        state.lastRead[placeId]
+      ).length
+    });
 
     const records = recordsOf(target);
     const unread = selectUnreadRecords(records, state.lastRead[placeId]);

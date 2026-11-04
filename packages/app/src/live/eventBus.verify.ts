@@ -101,12 +101,12 @@ const now = () => new Date("2026-07-12T12:00:00.000Z");
     startedAt: now().toISOString(),
     eventRecords: [{}]
   });
-  assert.equal(runs.getActiveRuns().length, 1);
+  assert.equal(runs.getActiveRuns(now).length, 1);
   bus.publish("rollout.recorded", {
     rolloutId: "rollout-active",
     conversationKey: "group:g1",
     status: "completed"
   });
-  assert.equal(runs.getActiveRuns().length, 0);
+  assert.equal(runs.getActiveRuns(now).length, 0);
   runs.dispose();
 }

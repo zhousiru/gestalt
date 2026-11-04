@@ -6,13 +6,12 @@ import { config as loadDotenvFile } from "dotenv";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   createAiSdkModelFromConfig,
-  createNoopDreamingRunner,
   createOneBotConnector,
   createOneBotForwardWsTransport,
   createRuntime,
   loadConfig,
   resolveGestaltHome,
-  type AgentTurnResult,
+  type WakeResult,
   type MessageReceivedEvent,
   type ModelRequestSnapshot,
   type ModelResponseSnapshot,
@@ -31,7 +30,7 @@ export interface OneBotProtocolRunResult {
   id: string;
   session: SessionDiagnostics;
   event: MessageReceivedEvent;
-  turnResults: AgentTurnResult[];
+  wakes: readonly WakeResult[];
   modelRequests: ModelRequestSnapshot[];
   modelResponses: ModelResponseSnapshot[];
   modelExchanges: HarnessModelExchangeSnapshot[];
@@ -91,10 +90,8 @@ export async function runOneBotProtocolE2E(): Promise<OneBotProtocolRunResult> {
     const runtime = await createRuntime({
       gestaltHome: tempHome,
       connector,
-      model: modelCapture.wrap(createAiSdkModelFromConfig(config)),
-      dreamingRunner: createNoopDreamingRunner()
+      model: modelCapture.wrap(createAiSdkModelFromConfig(config))
     });
-    const turnPromises: Promise<AgentTurnResult | undefined>[] = [];
     let canonicalEvent: MessageReceivedEvent | undefined;
 
     transport.onEvent(async (rawEvent) => {
@@ -103,16 +100,17 @@ export async function runOneBotProtocolE2E(): Promise<OneBotProtocolRunResult> {
         return;
       }
       canonicalEvent = event;
-      const dispatch = await runtime.dispatchEvent(event);
-      turnPromises.push(dispatch.outcome);
+      await runtime.dispatchEvent(event);
     });
     await transport.connect();
     await fakeOneBot.waitForConnection();
 
+    runtime.startLife();
+    await runtime.loop.whenQuiescent();
     fakeOneBot.sendEvent(createOneBotGroupMessageEvent());
-    const apiCall = await fakeOneBot.waitForApiCall("send_group_msg");
-    await runtime.whenIdle();
-    const turnResults = dedupeTurnResults(await Promise.all(turnPromises));
+    await fakeOneBot.waitForApiCall("send_group_msg");
+    await runtime.shutdown();
+    const wakes = runtime.loop.wakes;
     if (!canonicalEvent) {
       throw new Error("OneBot protocol run did not produce a canonical event.");
     }
@@ -123,7 +121,8 @@ export async function runOneBotProtocolE2E(): Promise<OneBotProtocolRunResult> {
     const { rollouts, reconstructedInputs } =
       await readAndValidateRolloutCapture(
         home.tracesDir,
-        modelCapture.exchanges
+        modelCapture.exchanges,
+        wakes.map((wake) => wake.rolloutId)
       );
     const modelRequests = modelCapture.exchanges.map((exchange) => exchange.request);
     const modelResponses = modelCapture.exchanges
@@ -146,7 +145,7 @@ export async function runOneBotProtocolE2E(): Promise<OneBotProtocolRunResult> {
       id: RUN_ID,
       session,
       event: canonicalEvent,
-      turnResults,
+      wakes,
       modelRequests,
       modelResponses,
       modelExchanges: modelCapture.exchanges,
@@ -459,18 +458,6 @@ function renderReport(input: {
     `- Session conversations: ${input.session.conversations.length}`,
     ""
   ].join("\n");
-}
-
-function dedupeTurnResults(
-  results: Array<AgentTurnResult | undefined>
-): AgentTurnResult[] {
-  const byTraceId = new Map<string, AgentTurnResult>();
-  for (const result of results) {
-    if (result) {
-      byTraceId.set(result.traceId, result);
-    }
-  }
-  return Array.from(byTraceId.values());
 }
 
 function loadLocalEnv(repoRoot: string): void {

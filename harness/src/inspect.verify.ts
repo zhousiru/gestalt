@@ -6,9 +6,8 @@ import {
   createAiSdkInspectRunner,
   createInspectBashTool,
   createMockConnector,
-  createMockModel,
-  createNoopDreamingRunner,
   createRuntime,
+  createSleepingModel,
   resolveGestaltHome,
   type GestaltConfig,
   type InspectRunInput,
@@ -61,8 +60,7 @@ try {
   const runtime = await createRuntime({
     gestaltHome: tempHome,
     connector,
-    model: createMockModel({ now: () => fixedNow }),
-    dreamingRunner: createNoopDreamingRunner(),
+    model: createSleepingModel(() => fixedNow),
     inspectRunner,
     now: () => fixedNow
   });
@@ -106,10 +104,9 @@ try {
     mentionsBot: false
   });
 
-  const turnResult = await runtime.handleEvent(inspectEvent);
-  await runtime.whenIdle();
+  await runtime.dispatchEvent(inspectEvent);
+  await runtime.flush();
 
-  assert.equal(turnResult, undefined);
   assert.equal(inspectedInputs.length, 1);
   const inspectedInput = inspectedInputs[0];
   assert.ok(inspectedInput, "expected inspect runner input");
@@ -336,6 +333,7 @@ async function verifyAiSdkInspectUsesReportToolAfterBash(): Promise<void> {
     };
     const sessionDiagnostics: SessionDiagnostics = {
       exportedAt: fixedNow.toISOString(),
+      wakes: [],
       conversations: [
         {
           conversation: event.conversation,

@@ -16,10 +16,14 @@ export function readSafeRuntimeEventRaw(
   switch (source.connector) {
     case "runtime-self": {
       const stickerId = readString(raw.stickerId);
-      if (raw.generatedBy !== "send_sticker" || !stickerId) {
+      // Journals from before the life loop recorded the old tool name.
+      if (
+        (raw.generatedBy !== "say" && raw.generatedBy !== "send_sticker") ||
+        !stickerId
+      ) {
         return undefined;
       }
-      return { generatedBy: "send_sticker", stickerId };
+      return { generatedBy: raw.generatedBy, stickerId };
     }
     case "runtime-inspect": {
       const requestEventId = readString(raw.requestEventId);

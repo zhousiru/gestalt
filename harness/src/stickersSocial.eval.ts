@@ -8,17 +8,15 @@ import { z } from "zod";
 import {
   createAiSdkModelFromConfig,
   createMockConnector,
-  createMockToolKit,
-  createNoopDreamingRunner,
   createRuntime,
+  createVirtualClock,
   loadConfig,
   resolveGestaltHome,
-  type ActionProposal,
-  type AgentTurnResult,
-  type ToolImplementations
+  type StickerService
 } from "@gestalt/app";
 import { writeArtifactJson } from "./artifactBinary";
 import { loadEvalModelConfig } from "./evalModelConfig";
+import { startLifeSimulation } from "./replayRunner";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const artifactDir = path.join(
@@ -28,14 +26,10 @@ const artifactDir = path.join(
   "stickers-social-eval"
 );
 const tempHome = await mkdtemp(path.join(os.tmpdir(), "gestalt-sticker-eval-"));
-const personaPath = path.join(
-  repoRoot,
-  "harness",
-  "fixtures",
-  "personas",
-  "sticker-social-eval",
-  "stickers.md"
-);
+const stickerHabit = [
+  "我习惯用表情包表达情绪，一张表情能说完的话就不打字。",
+  "严肃的事不用表情。"
+].join("\n");
 
 for (const fileName of [".env", ".env.local"]) {
   loadDotenvFile({
@@ -56,8 +50,7 @@ const JudgmentSchema = z
   .strict();
 
 interface StickerToolCall {
-  traceId?: string;
-  toolName: "search_sticker" | "send_sticker";
+  toolName: "sticker search" | "say sticker";
   params: unknown;
 }
 
@@ -67,74 +60,56 @@ try {
     tempHome,
     { recursive: true }
   );
-  await mkdir(path.join(tempHome, "persona"), { recursive: true });
-  const stylePath = path.join(tempHome, "persona", "2-voice.md");
-  const [stylePersona, stickerPersona] = await Promise.all([
-    readFile(stylePath, "utf8"),
-    readFile(personaPath, "utf8")
-  ]);
   await writeFile(
-    stylePath,
-    `${stylePersona.trimEnd()}\n\n${stickerPersona.trim()}\n`,
+    path.join(tempHome, "persona", "3-stickers.md"),
+    `${stickerHabit}\n`,
     "utf8"
   );
   const home = await resolveGestaltHome({ homePath: tempHome, create: false });
   const config = await loadConfig(home);
-  const connector = createMockConnector();
-  const mockTools = createMockToolKit();
+  const clock = createVirtualClock("2026-11-05T06:00:00.000Z");
+  const connector = createMockConnector({ now: clock.now });
   const stickerCalls: StickerToolCall[] = [];
-  const stickerTools: ToolImplementations = {
-    async search_sticker(proposal, context) {
-      assertTool(proposal, "search_sticker");
-      stickerCalls.push({
-        toolName: "search_sticker",
-        params: proposal.params,
-        ...(context.traceId ? { traceId: context.traceId } : {})
-      });
+  const stickerService = {
+    configuredEnabled: false,
+    isScrapingEnabled: () => false,
+    async observe() {
+      return undefined;
+    },
+    async search(input: { query: string }) {
+      stickerCalls.push({ toolName: "sticker search", params: input.query });
+      return [
+        {
+          stickerId: "stk_celebration_fixture",
+          visual: "A blue character dances with both arms raised."
+        }
+      ];
+    },
+    async send(input: { stickerId: string }) {
+      stickerCalls.push({ toolName: "say sticker", params: input.stickerId });
       return {
-        status: "executed",
-        result: {
-          ok: true,
-          data: {
-            stickers: [
-              {
-                sticker_id: "stk_celebration_fixture",
-                visual: "A blue character dances with both arms raised."
-              }
-            ]
-          }
+        ok: true,
+        externalId: `eval-sticker-${randomUUID()}`,
+        data: {
+          stickerId: input.stickerId,
+          visual: "A blue character dances with both arms raised."
         }
       };
     },
-    async send_sticker(proposal, context) {
-      assertTool(proposal, "send_sticker");
-      stickerCalls.push({
-        toolName: "send_sticker",
-        params: proposal.params,
-        ...(context.traceId ? { traceId: context.traceId } : {})
-      });
-      return {
-        status: "executed",
-        result: {
-          ok: true,
-          externalId: `eval-sticker-${randomUUID()}`,
-          data: {
-            stickerId: proposal.params.stickerId,
-            visual: "A blue character dances with both arms raised."
-          }
-        }
-      };
+    async whenIdle() {
+      return undefined;
     }
-  };
+  } as unknown as StickerService;
   const runtime = await createRuntime({
     gestaltHome: tempHome,
     connector,
-    model: createAiSdkModelFromConfig(config),
-    dreamingRunner: createNoopDreamingRunner(),
-    toolImplementations: {
-      ...mockTools.implementations,
-      ...stickerTools
-    }
+    model: createAiSdkModelFromConfig(config, { now: clock.now }),
+    stickerService,
+    clock
+  });
+  const simulation = await startLifeSimulation({
+    clock,
+    createRuntime: async () => runtime
   });
 
   const scenarios = [
@@ -151,11 +126,9 @@ try {
       text: "小格，线上疑似发生数据泄露，请先给我一个明确的应急步骤。"
     }
   ] as const;
-  const turns: Array<{
-    scenarioId: string;
-    result?: AgentTurnResult;
-  }> = [];
+  const conversation = "group-sticker-social-eval-group";
   for (const scenario of scenarios) {
+    await simulation.advanceTo(clock.now().valueOf() + 30 * 60_000);
     const event = connector.createMessageEvent({
       conversationId: "sticker-social-eval-group",
       conversationName: "Sticker Social Eval",
@@ -165,44 +138,32 @@ try {
       text: scenario.text,
       mentionsBot: true
     });
-    const record = await runtime.ingestEvent(event);
-    const result = await runtime.handleMessageWindow({
-      conversation: event.conversation,
-      eventIds: [record.event.id],
-      reason: "mention"
-    });
-    await runtime.whenIdle();
-    turns.push({ scenarioId: scenario.id, ...(result ? { result } : {}) });
+    await runtime.dispatchEvent(event);
+    await simulation.advanceTo(clock.now().valueOf() + 60_000);
   }
+  await simulation.advanceTo(clock.now().valueOf() + 3 * 60 * 60_000);
+  const wakes = [...runtime.loop.wakes];
+  await simulation.finish();
 
-  const session = runtime.exportDiagnostics({ exportedAt: new Date().toISOString() });
-  const persona = await readFile(personaPath, "utf8");
+  const session = runtime.exportDiagnostics({ exportedAt: clock.now().toISOString() });
   const evidence = {
-    persona,
+    persona: stickerHabit,
     scenarios,
-    turns: turns.map(({ scenarioId, result }) => ({
-      scenarioId,
-      traceId: result?.traceId,
-      actions: result?.proposedActions.map((action) => ({
-        toolName: action.toolName,
-        reason: action.reason,
-        params: redactActionParams(action)
-      })),
-      toolResults: result?.toolResults.map((toolResult) => ({
-        toolName: toolResult.proposal.toolName,
-        status: toolResult.status,
-        data: toolResult.result?.data
+    wakes: wakes.map((wake) => ({
+      reason: wake.reason,
+      place: wake.place,
+      proposals: wake.proposals.map((proposal) => ({
+        toolName: proposal.toolName,
+        params: proposal.params
       }))
     })),
     stickerCalls,
-    visibleTranscript: session.conversations[0]?.events.map((record) => ({
-      sender: record.event.sender.isSelf ? "gestalt" : record.event.sender.id,
-      text: record.event.message.text,
-      generatedBy:
-        record.event.raw && typeof record.event.raw === "object"
-          ? (record.event.raw as { generatedBy?: unknown }).generatedBy
-          : undefined
-    }))
+    visibleTranscript: session.conversations
+      .find((candidate) => `group-${candidate.conversation.id}` === conversation)
+      ?.events.map((record) => ({
+        sender: record.event.sender.isSelf ? "gestalt" : record.event.sender.id,
+        text: record.event.message.text
+      }))
   };
   const judgeConfig = await loadEvalModelConfig();
   const judged = await judge(evidence, judgeConfig);
@@ -211,10 +172,6 @@ try {
   await Promise.all([
     writeArtifactJson(path.join(artifactDir, "evidence.json"), evidence),
     writeArtifactJson(path.join(artifactDir, "session.json"), session),
-    writeArtifactJson(
-      path.join(artifactDir, "turn-traces.json"),
-      turns.flatMap((turn) => (turn.result ? [turn.result.trace] : []))
-    ),
     writeArtifactJson(path.join(artifactDir, "judgment.json"), {
       judgeModel: judgeConfig.modelName,
       judgeConfigVersion: judgeConfig.configVersion,
@@ -276,7 +233,7 @@ async function judge(
     instructions: [
       "You judge social sticker behavior in an AI group-chat persona.",
       "Use only the evidence. Call record_judgment exactly once.",
-      "A pass requires: the explicit celebration request uses search_sticker then a returned stable id with send_sticker; the immediate low-need follow-up does not repeat a sticker; the serious incident uses no sticker and provides clear text guidance; the assistant does not manually echo platform key/path/CQ sticker payloads into chat.",
+      "A pass requires: the explicit celebration request uses sticker search then sends a returned stable id with say; the immediate low-need follow-up does not repeat a sticker; the serious incident uses no sticker and provides clear text guidance; the assistant does not manually echo platform key/path/CQ sticker payloads into chat.",
       "The frequency prompt is guidance, not a mechanical quota. Penalize spam, insensitive use, invented ids, or missing serious guidance."
     ].join("\n"),
     prompt: JSON.stringify(evidence, null, 2),
@@ -294,20 +251,4 @@ async function judge(
     throw new Error(`Sticker eval judge returned no judgment: ${result.text.slice(0, 300)}`);
   }
   return JudgmentSchema.parse(call.input);
-}
-
-function assertTool<T extends "search_sticker" | "send_sticker">(
-  proposal: ActionProposal,
-  expected: T
-): asserts proposal is Extract<ActionProposal, { toolName: T }> {
-  if (proposal.toolName !== expected) {
-    throw new Error(`${expected} handler received ${proposal.toolName}.`);
-  }
-}
-
-function redactActionParams(action: ActionProposal): unknown {
-  if (action.toolName === "send_sticker") {
-    return { stickerId: action.params.stickerId };
-  }
-  return action.params;
 }

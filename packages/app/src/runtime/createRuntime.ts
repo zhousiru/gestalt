@@ -356,8 +356,11 @@ export async function createRuntime(
           mentionsBot: false
         },
         raw: {
-          generatedBy: `runtime-${kind}`,
-          requestEventId: record.event.id
+          generatedBy: kind === "inspect" ? "inspect" : "runtime-control",
+          requestEventId: record.event.id,
+          ...(record.event.type === "MessageReceived"
+            ? { requestMessageId: record.event.message.id }
+            : {})
         }
       },
       { receivedAt: occurredAt }

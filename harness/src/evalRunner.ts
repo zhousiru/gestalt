@@ -90,10 +90,10 @@ interface EvalEvidence {
     id: string;
     description: string;
   };
-  session: Record<string, unknown>;
+  wakes: unknown[];
+  chat: unknown[];
   modelExchanges: unknown[];
-  rolloutSpans: unknown[];
-  rolloutRecords: unknown[];
+  lifeLog: string[];
   homeChanges: {
     added: HomeFileSnapshot[];
     removed: HomeFileSnapshot[];
@@ -155,57 +155,52 @@ function buildJudgeInput(
 }
 
 function buildEvidence(replay: ReplayRunResult): EvalEvidence {
-  const conversation = replay.session.conversations[0];
-  const turn = conversation?.turns[0];
-  const rollout = replay.rollouts[0];
   const changes = diffHomeSnapshots(replay.homeBefore, replay.homeAfter);
-
   return {
     scenario: {
       id: replay.fixture.id,
       description: replay.fixture.description
     },
-    session: {
-      conversation: conversation?.conversation,
-      events: conversation?.events.map((event) => ({
-        id: event.event.id,
-        type: event.event.type,
-        text:
-          event.event.type === "MessageReceived"
-            ? event.event.message.text
-            : undefined,
-        mentionsBot:
-          event.event.type === "MessageReceived"
-            ? event.event.message.mentionsBot
-            : undefined
-      })),
-      windows: conversation?.windows,
-      turn: turn
-        ? {
-            status: turn.status,
-            eventIds: turn.eventIds,
-            steerCount: turn.steerCount,
-            phases: turn.phases.map((phase) => phase.phase),
-            proposedActions: turn.proposedActions,
-            toolResults: turn.toolResults
-          }
-        : undefined
-    },
-    modelExchanges: replay.modelExchanges.map((exchange) => ({
+    wakes: replay.wakes.map((wake) => ({
+      reason: wake.reason,
+      kind: wake.kind,
+      place: wake.place ?? "phone",
+      startedAt: wake.startedAt,
+      said: wake.said,
+      held: wake.held,
+      requestedSleepSeconds: wake.requestedSleepSeconds,
+      doNotDisturb: wake.doNotDisturb,
+      note: wake.note,
+      tokens: wake.usage.inputTokens + wake.usage.outputTokens,
+      actions: wake.proposals.map((proposal) => ({
+        toolName: proposal.toolName,
+        params: truncateJson(proposal.params, 1000)
+      }))
+    })),
+    chat: replay.session.conversations.map((conversation) => ({
+      conversation: conversation.conversation,
+      events: conversation.events.map((event) => ({
+        sender: event.event.type === "MessageReceived"
+          ? event.event.sender.displayName ?? event.event.sender.id
+          : undefined,
+        self: event.event.type === "MessageReceived"
+          ? event.event.sender.isSelf === true
+          : undefined,
+        text: event.event.type === "MessageReceived"
+          ? event.event.message.text
+          : undefined,
+        mentionsBot: event.event.type === "MessageReceived"
+          ? event.event.message.mentionsBot
+          : undefined,
+        receivedAt: event.receivedAt
+      }))
+    })),
+    modelExchanges: replay.modelExchanges.slice(0, 40).map((exchange) => ({
       purpose: exchange.purpose,
       request: summarizeModelRequest(exchange.request),
       response: summarizeModelResponse(exchange.response)
     })),
-    rolloutSpans:
-      rollout?.records
-        .filter((record) => record.type === "span_completed")
-        .map((span) => ({
-          name: span.name,
-          status: span.status,
-          attributes: truncateJson(span.attributes, 3000)
-        })) ?? [],
-    rolloutRecords:
-      rollout?.records.map((record) => truncateJson(record, 1500)) ?? [],
+    lifeLog: replay.lifeLog,
     homeChanges: {
       added: changes.added,
       removed: changes.removed,
@@ -394,7 +389,7 @@ function diffHomeSnapshots(
 
   return {
     added: after.files
-      .filter((file) => !beforeByPath.has(file.path))
+      .filter((file) => !beforeByPath.has(file.path) && isLifeFile(file))
       .map(compactHomeFile),
     removed: before.files
       .filter((file) => !afterByPath.has(file.path))
@@ -406,6 +401,10 @@ function diffHomeSnapshots(
       })
       .map(compactHomeFile)
   };
+}
+
+function isLifeFile(file: HomeFileSnapshot): boolean {
+  return file.path.startsWith("life/");
 }
 
 function compactHomeFile(file: HomeFileSnapshot): HomeFileSnapshot {

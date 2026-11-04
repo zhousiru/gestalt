@@ -4,75 +4,72 @@ import {
   ToolNameSchema,
   createDefaultToolRegistry,
   hashModelToolPrompts,
-  renderActionSystemPrompt,
-  renderActionWindowPrompt,
-  renderDreamingTaskPrompt,
+  DEFAULT_CONSTITUTION,
+  renderDreamPrompt,
   renderInspectSystemPrompt,
+  renderLifeSystemPrompt,
+  renderWakePrompt,
   renderInspectTaskPrompt,
   renderStickerDescriptionPrompt
 } from "@gestalt/app";
 
-const action = renderActionSystemPrompt({
-  persona: {
-    homeRoot: "/fixture",
-    version: "fixture",
-    fragments: []
-  },
-  memories: []
+const action = renderLifeSystemPrompt({
+  constitution: DEFAULT_CONSTITUTION,
+  me: []
 });
-assert.equal(action.id, "runtime.action.system");
+assert.equal(action.id, "runtime.life.system");
 assert.match(action.contentHash, /^[a-f0-9]{16}$/);
-assert.match(action.content, /Use say_nothing when you have nothing visible to add right now/);
-assert.match(action.content, /Use leave only when you explicitly want to stop following this topic/);
-assert.match(action.content, /Finishing one reply or having nothing more to say right now is not a reason to leave/);
-assert.match(
-  action.content,
-  /agent-browser is available through bash; before first use run: agent-browser skills get core/
-);
-assert.match(
-  action.content,
-  /agent-browser open "https:\/\/www\.google\.com\/search\?q=<keywords>", then inspect the results/
-);
-assert.doesNotMatch(action.content, /bash and finish_dreaming belong only to dreams/);
-assert.doesNotMatch(action.content, /call leave as your final tool/);
-assert.match(action.content, /Write visible message text as plain text/);
-assert.match(action.content, /Do not use HTML or Markdown/);
-assert.match(ACTION_TOOL_PROMPTS.send_group_message.purpose, /plain-text message/);
-assert.match(ACTION_TOOL_PROMPTS.send_dm.parameters.text, /without HTML or Markdown/);
-assert.match(ACTION_TOOL_PROMPTS.send_image.parameters.caption, /without HTML or Markdown/);
+assert.match(action.content, /You are not an assistant on duty/);
+assert.match(action.content, /There is one of you/);
+assert.match(action.content, /Every wake ends with sleep/);
+assert.match(action.content, /Reading and leaving is normal/);
+assert.match(action.content, /You are an AI, and you do not hide it/);
+assert.match(action.content, /You never invent experiences/);
+assert.match(action.content, /agent-browser skills get core/);
+assert.match(action.content, /Write plain text with no Markdown/);
+assert.match(ACTION_TOOL_PROMPTS.say.parameters.text, /No Markdown/);
 assert.equal(
   ACTION_TOOL_PROMPTS.bash.parameters.command,
   "Bash command to run."
 );
-assert.doesNotMatch(action.content, /there is no lifecycle tool/i);
 assert.equal(
   action.contentHash,
-  renderActionSystemPrompt({
-    persona: { homeRoot: "/other", version: "other", fragments: [] },
-    memories: []
+  renderLifeSystemPrompt({ constitution: DEFAULT_CONSTITUTION, me: [] })
+    .contentHash
+);
+assert.notEqual(
+  action.contentHash,
+  renderLifeSystemPrompt({
+    constitution: DEFAULT_CONSTITUTION,
+    me: [{ path: "me/index.md", content: "changed by a dream" }]
   }).contentHash
 );
 
-const windowPrompt = renderActionWindowPrompt("one deterministic window");
-assert.equal(windowPrompt.content, "one deterministic window");
+const wake = renderWakePrompt({
+  time: "2026-11-05 14:20, Thursday (Asia/Shanghai)",
+  sleptFor: "38 minutes",
+  reason: "you meant to wake around now",
+  budgetLeftPercent: 62,
+  lastDream: "16 hours ago",
+  phone: [
+    { place: "group-1", kind: "group", name: "群", unread: 3, called: true }
+  ],
+  web: "",
+  emojis: ["赞"]
+});
+assert.equal(wake.id, "runtime.life.wake");
+assert.match(wake.content, /3 unread, someone called you/);
 
-const dreaming = renderDreamingTaskPrompt({ participants: "- Alice (id=alice)" });
-assert.match(dreaming.content, /conversation and actions above/);
-assert.match(dreaming.content, /finish_dreaming/);
-assert.match(dreaming.content, /likely to change a future judgment/);
-assert.match(dreaming.content, /Usually change nothing/);
-assert.match(dreaming.content, /message-by-message chronology/);
-assert.match(dreaming.content, /Do not quote dialogue/);
-assert.match(dreaming.content, /profile\.md/);
-assert.match(dreaming.content, /current\.md/);
-assert.match(dreaming.content, /preferences\.md/);
-assert.match(dreaming.content, /relationship\.md/);
-assert.match(dreaming.content, /uncertain\.md/);
-assert.match(dreaming.content, /Keep uncertain claims out of factual files/);
-assert.match(dreaming.content, /Do not create a file per event/);
-assert.match(dreaming.content, /instead of appending another bullet/);
-assert.doesNotMatch(dreaming.content, /asked to remember|asks? you to remember|explicit memory request/i);
-assert.doesNotMatch(dreaming.content, /preserve the concrete meaning and important phrases/);
+const dream = renderDreamPrompt({
+  lastDream: "1 day ago",
+  diaries: [],
+  omittedDiaries: 0
+});
+assert.match(dream, /Ask what stayed with you/);
+assert.match(dream, /What do you want to do next/);
+assert.match(dream, /nothing private about anyone/);
+assert.match(dream, /Keep the words if the words are the point/);
+assert.doesNotMatch(dream, /Usually change nothing/);
 
 assert.match(renderInspectSystemPrompt().content, /read-only bash tool/);
 assert.match(
@@ -141,7 +138,7 @@ console.log(
   JSON.stringify({
     ok: true,
     actionPrompt: { id: action.id, contentHash: action.contentHash },
-    dreamingPrompt: { id: dreaming.id, contentHash: dreaming.contentHash },
+    wakePrompt: { id: wake.id, contentHash: wake.contentHash },
     stickerPrompt: {
       id: animatedStickerPrompt.id,
       hash: animatedStickerPrompt.hash

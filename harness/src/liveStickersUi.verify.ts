@@ -7,7 +7,7 @@ import {
   createLiveEventBus,
   createLiveRunStore,
   createMockConnector,
-  createMockModel,
+  createSleepingModel,
   createRuntime,
   createStickerLogger,
   createStickerService,
@@ -43,7 +43,7 @@ const hold = process.argv.includes("--hold");
 try {
   await writeFile(
     path.join(tempHome, "config.toml"),
-    "dreaming_enabled = false\n",
+    "\n",
     "utf8"
   );
   const home = await resolveGestaltHome({ homePath: tempHome });
@@ -155,7 +155,7 @@ try {
   const runtime = await createRuntime({
     gestaltHome: tempHome,
     connector,
-    model: createMockModel({ now }),
+    model: createSleepingModel(now),
     stickerService: service,
     liveEvents: bus,
     now

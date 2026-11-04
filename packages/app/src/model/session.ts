@@ -342,3 +342,12 @@ export function createScriptedModel(
     }
   };
 }
+
+/** A model that only ever goes back to sleep, for runs that are not about it. */
+export function createSleepingModel(now?: () => Date): ModelClient {
+  return createScriptedModel({
+    ...(now ? { now } : {}),
+    script: ({ step }) =>
+      step === 0 ? { toolName: "sleep", input: { seconds: 3600 } } : undefined
+  });
+}

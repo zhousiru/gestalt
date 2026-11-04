@@ -198,7 +198,7 @@ try {
   assert.deepEqual(detail.unresolvedOutboundActions, [
     {
       actionId: "action-unknown",
-      toolName: "send_group_message",
+      toolName: "say",
       startedAt: detail.records.find(
         (record) =>
           record.type === "outbound_action_started" &&

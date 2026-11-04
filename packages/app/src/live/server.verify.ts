@@ -148,13 +148,16 @@ async function main(): Promise<void> {
       proposedActions: [],
       toolResults: []
     });
-    assert.equal(runStore.getActiveRun("active-rollout")?.status, "running");
+    assert.equal(
+      runStore.getActiveRun("active-rollout", () => NOW)?.status,
+      "running"
+    );
     bus.publish("rollout.recorded", {
       rolloutId: "active-rollout",
       conversationKey: "group:beta",
       status: "completed"
     });
-    assert.equal(runStore.getActiveRun("active-rollout"), undefined);
+    assert.equal(runStore.getActiveRun("active-rollout", () => NOW), undefined);
 
     const detail = RolloutDetailSchema.parse(
       await getJson(server.url, `/api/live/rollouts/${ROLLOUT_ID}`)

@@ -145,7 +145,7 @@ function assertToolOutputs(result: ReplayRunResult): void {
     return;
   }
   const serialized = JSON.stringify(
-    result.modelExchanges.map((exchange) => exchange.response?.messages)
+    result.modelExchanges.map((exchange) => exchange.response)
   );
   for (const text of expected.contain ?? []) {
     assert.ok(
