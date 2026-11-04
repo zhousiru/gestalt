@@ -12,7 +12,8 @@ export const ScenarioModelSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("scripted"),
       /** One list of steps per wake. Later wakes just go back to sleep. */
-      wakes: z.array(z.array(ScriptedStepSchema)).default([]),
+      /** A null step is the model stopping without calling anything. */
+      wakes: z.array(z.array(ScriptedStepSchema.nullable())).default([]),
       usagePerStep: z
         .object({
           inputTokens: z.number().int().nonnegative(),

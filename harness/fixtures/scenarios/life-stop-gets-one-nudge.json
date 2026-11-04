@@ -1,0 +1,100 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-stop-gets-one-nudge",
+  "description": "A model that stops without calling anything is told it is still awake, once. Stopping again ends the wake with the default sleep.",
+  "until": 1000,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 300
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "private-henry"
+          }
+        },
+        null,
+        {
+          "tool": "say",
+          "input": {
+            "text": "我是 AI"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ],
+      [
+        null,
+        null,
+        {
+          "tool": "say",
+          "input": {
+            "text": "never reached"
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "henry",
+      "conversationKind": "private",
+      "senderId": "henry",
+      "senderName": "Henry",
+      "at": 60,
+      "messageId": "m1",
+      "text": "说真的，你是 AI 吗"
+    },
+    {
+      "conversationId": "henry",
+      "conversationKind": "private",
+      "senderId": "henry",
+      "senderName": "Henry",
+      "at": 600,
+      "messageId": "m2",
+      "text": "谢谢"
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 4,
+      "reasons": [
+        "boot",
+        "vibration",
+        "vibration",
+        "timer"
+      ],
+      "startOffsets": [
+        0,
+        60,
+        600,
+        615
+      ]
+    },
+    "connector": {
+      "textsInclude": [
+        "我是 AI"
+      ],
+      "textsExclude": [
+        "never reached"
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "you are still awake"
+      ]
+    }
+  }
+}

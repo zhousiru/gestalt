@@ -5,6 +5,7 @@ import {
   stepCountIs,
   tool,
   type LanguageModel,
+  type ModelMessage,
   type ToolSet
 } from "ai";
 import { z } from "zod";
@@ -254,9 +255,7 @@ function createAiSdkModelSession(
         model: options.languageModel,
         instructions: input.instructions.content,
         tools: buildLifeTools(input.tools, execute),
-        // Every wake ends with sleep, so a step without a tool call is not a
-        // choice the model can make. Providers that reject this set "auto".
-        toolChoice: toolChoice ?? "required",
+        ...(toolChoice !== undefined ? { toolChoice } : {}),
         toolOrder: input.tools.map((candidate) => candidate.name),
         ...(providerOptions ? { providerOptions } : {}),
         stopWhen: [
@@ -338,12 +337,27 @@ function createAiSdkModelSession(
         }
       });
 
-      try {
-        await agent.generate({
-          messages: [{ role: "user", content: input.opening.content }],
+      const generate = (messages: ModelMessage[]) =>
+        agent.generate({
+          messages,
           timeout: { totalMs: timeoutMs },
           ...(input.signal ? { abortSignal: input.signal } : {})
         });
+      try {
+        const opening: ModelMessage = {
+          role: "user",
+          content: input.opening.content
+        };
+        const first = await generate([opening]);
+        if (!stopRequested && first.steps.length < input.maxSteps) {
+          // Not every provider accepts a required tool choice, and a model that
+          // simply stops has not decided anything. It gets one chance to.
+          await generate([
+            opening,
+            ...first.response.messages.filter(hasContent),
+            { role: "user", content: input.unfinished.content }
+          ]);
+        }
       } catch (error) {
         const endedAt = now().toISOString();
         for (const exchange of pendingExchanges.splice(0)) {
@@ -362,6 +376,10 @@ function createAiSdkModelSession(
       return { steps: stepRecorder.steps, usage };
     }
   };
+}
+
+function hasContent(message: ModelMessage): boolean {
+  return message.content.length > 0;
 }
 
 export function createModelStepRecorder(now: () => Date = () => new Date()): {

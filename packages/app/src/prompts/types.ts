@@ -1,6 +1,7 @@
 export type PromptId =
   | "runtime.life.system"
   | "runtime.life.wake"
+  | "runtime.life.unfinished"
   | "runtime.life.dream"
   | "runtime.inspect.system"
   | "runtime.inspect.task";

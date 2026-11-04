@@ -294,7 +294,7 @@ export function createActiveRollout(
         ? []
         : normalizeMessages(
             exchange.response.messages ?? synthesizeOutput(exchange.response)
-          );
+          ).filter(hasContent);
     const rolloutMessages = outputMessages.map((message, index) =>
       createMessage(message, `${generationId}:output:${index}`)
     );
@@ -395,6 +395,14 @@ export function createActiveRollout(
 interface NormalizedMessage {
   role: string;
   content: unknown;
+}
+
+/** A model that stops silently says nothing, so nothing joins the transcript. */
+function hasContent(message: NormalizedMessage): boolean {
+  const { content } = message;
+  return typeof content === "string" || Array.isArray(content)
+    ? content.length > 0
+    : true;
 }
 
 function normalizeMessages(messages: readonly unknown[]): NormalizedMessage[] {

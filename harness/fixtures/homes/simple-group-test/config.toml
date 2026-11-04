@@ -7,6 +7,7 @@ main_model_routing_allow_fallbacks = false
 main_model_thinking = "disabled"
 main_model_prompt_cache_enabled = true
 main_model_prompt_cache_ttl = "5m"
+main_model_tool_choice = "auto"
 
 bot_user_id = "bot-1"
 bot_display_name = "小格"

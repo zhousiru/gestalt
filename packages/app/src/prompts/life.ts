@@ -123,6 +123,16 @@ export function renderWakePrompt(input: WakePromptInput): RenderedPrompt {
   );
 }
 
+export function renderUnfinishedPrompt(): RenderedPrompt {
+  return createRenderedPrompt(
+    "runtime.life.unfinished",
+    [
+      "You stopped without calling a tool, so you are still awake and nothing you wrote reached anyone.",
+      "If you mean to say something, use say. If you are done, call sleep."
+    ].join("\n")
+  );
+}
+
 export function renderPlaceView(input: {
   place: string;
   title: string;

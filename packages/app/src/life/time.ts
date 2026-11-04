@@ -39,7 +39,7 @@ export function formatDuration(ms: number): string {
     return "under a minute";
   }
   if (minutes < 90) {
-    return `${minutes} minutes`;
+    return minutes === 1 ? "1 minute" : `${minutes} minutes`;
   }
   const hours = Math.round(minutes / 60);
   if (hours < 36) {

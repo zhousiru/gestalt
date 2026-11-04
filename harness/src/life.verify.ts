@@ -27,7 +27,7 @@ for (const name of fixtures) {
   } catch (error) {
     failures += 1;
     console.error(`FAILED ${name}`);
-    console.error(error instanceof Error ? error.message : error);
+    console.error(error instanceof Error ? error.stack : error);
   }
 }
 console.log(`${fixtures.length - failures}/${fixtures.length} fixtures passed`);

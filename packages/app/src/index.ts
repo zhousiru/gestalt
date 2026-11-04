@@ -18,6 +18,7 @@ export * from "./inspect/agent";
 export * from "./life/clock";
 export * from "./life/config";
 export * from "./life/loop";
+export * from "./life/migrate";
 export * from "./life/phone";
 export * from "./life/places";
 export * from "./life/state";

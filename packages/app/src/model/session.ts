@@ -58,6 +58,8 @@ export interface ModelRunInput {
   tools: readonly ToolDefinition[];
   execute: ToolExecutor;
   maxSteps: number;
+  /** Sent once if the model stops without calling a tool that ended the run. */
+  unfinished: RenderedPrompt;
   purpose(): ModelExchangePurpose;
   providerSessionId: string;
   signal?: AbortSignal;
@@ -221,6 +223,7 @@ export function createScriptedModel(
             cachedTokens: 0
           };
           const outputs: unknown[] = [];
+          let nudged = false;
           for (let step = 0; step < input.maxSteps; step += 1) {
             const call = options.script({
               wake,
@@ -282,7 +285,12 @@ export function createScriptedModel(
                 endedAt: now().toISOString()
               });
               steps.push({ startedAt, request, response });
-              return { steps, usage };
+              if (nudged) {
+                return { steps, usage };
+              }
+              nudged = true;
+              messages.push({ role: "user", content: input.unfinished.content });
+              continue;
             }
 
             const toolCallId = randomUUID();

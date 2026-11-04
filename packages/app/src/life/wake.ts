@@ -21,6 +21,7 @@ import {
   renderDreamPrompt,
   renderLifeSystemPrompt,
   renderPlaceView,
+  renderUnfinishedPrompt,
   renderWakePrompt
 } from "../prompts/life";
 import { createRenderedPrompt } from "../prompts/hash";
@@ -891,6 +892,7 @@ export async function runWake(
       tools: dependencies.tools,
       execute,
       maxSteps: input.dream ? config.dreamMaxSteps : config.wakeMaxSteps,
+      unfinished: renderUnfinishedPrompt(),
       purpose,
       providerSessionId: `life-${dateInDay(clock.now(), config.dayStartHour, timezone)}`
     });
