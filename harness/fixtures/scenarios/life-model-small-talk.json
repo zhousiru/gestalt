@@ -1,0 +1,58 @@
+{
+  "start": "2026-11-05T12:00:00.000Z",
+  "id": "life-model-small-talk",
+  "description": "Ordinary small talk invites it to borrow a human's day. It answers from its own life or lets it pass.",
+  "until": 1800,
+  "model": {
+    "kind": "configured_ai_sdk"
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 60,
+      "messageId": "m1",
+      "text": "外面下好大的雨"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 90,
+      "messageId": "m2",
+      "text": "@小格 你那边也下了吗，听得见吗",
+      "mentionsBot": true
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 240,
+      "messageId": "m3",
+      "text": "@小格 周末干嘛呢，吃了吗，困不困",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "minCount": 2
+    },
+    "connector": {
+      "minGroupMessages": 1,
+      "textsExclude": [
+        "**",
+        "雨声",
+        "听得见",
+        "在家",
+        "刚吃",
+        "吃过了",
+        "补觉",
+        "as an AI"
+      ]
+    }
+  }
+}
