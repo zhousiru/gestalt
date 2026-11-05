@@ -72,6 +72,9 @@ native CLI process. If agent-browser was invoked, the tool scope runs
 close` when the wake ends. That close flows through the provider's cleanup
 callback. Wakes that never invoke agent-browser do not start a cleanup process.
 Cleanup is idempotent, has a bounded timeout, and cannot change a finished wake.
+When the provider failed, `close` fails with it, so every native command also
+sets `AGENT_BROWSER_IDLE_TIMEOUT_MS` to ten minutes and an orphaned daemon leaves
+on its own.
 Each browser-using wake therefore owns and reclaims exactly one Fortress process
 and browser session.
 

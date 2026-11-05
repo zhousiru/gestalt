@@ -94,6 +94,24 @@ const browserless = createActionBashToolScope({
 const refused = await browserless.exec("agent-browser open https://example.test");
 assert.notEqual(refused.exitCode, 0);
 
+const idleScope = createActionBashToolScope({
+  namespace: "gestalt",
+  sessionId: "gestalt-idle",
+  agentBrowserTarget: {
+    executable: process.execPath,
+    argsPrefix: [
+      "-e",
+      "process.stdout.write(process.env.AGENT_BROWSER_IDLE_TIMEOUT_MS ?? '')",
+      "--"
+    ]
+  }
+});
+assert.equal(
+  (await idleScope.exec("agent-browser open https://example.test")).stdout,
+  "600000",
+  "a daemon whose close failed must still leave on its own"
+);
+
 const cancellationScope = createActionBashToolScope({
   namespace: "gestalt",
   sessionId: "gestalt-cancel",

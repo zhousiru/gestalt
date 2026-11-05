@@ -192,6 +192,9 @@ async function executeNativeCommand(
       [...(target.argsPrefix ?? []), ...args],
       {
         shell: false,
+        // When a provider fails, close fails with it. The daemon then has to
+        // leave on its own, or every such wake would leave one running.
+        env: { AGENT_BROWSER_IDLE_TIMEOUT_MS: "600000", ...process.env },
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true
       }
