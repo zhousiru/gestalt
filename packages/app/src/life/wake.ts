@@ -154,6 +154,7 @@ export async function runWake(
     | undefined;
   let held = 0;
   let said = 0;
+  const saidTexts: string[] = [];
 
   const sourceEvent = (): CanonicalEvent => {
     const records = conversation ? sessionStore.getEvents(conversation) : [];
@@ -580,6 +581,10 @@ export async function runWake(
         markRead(conversation);
       }
       said += 1;
+      const text = readString(proposal.params.text);
+      if (text) {
+        saidTexts.push(text);
+      }
     }
     await rollout.recordToolFinished(proposal, result, true);
     return result;
@@ -935,12 +940,19 @@ export async function runWake(
 
     const endedAt = clock.now();
     const note = sleepRequest?.note;
-    // A wake that went nowhere has nothing to remember.
-    if (note && place && !wasDream) {
+    // A wake that went nowhere has nothing to remember. The note is what it
+    // chose to keep; what it said is on the record whether it likes it or not,
+    // so a dream can hold its words against its life.
+    if (place && !wasDream && (note || saidTexts.length > 0)) {
       await life.appendDiary(
         place,
         dateInDay(endedAt, config.dayStartHour, timezone),
-        `- ${formatZonedDateTime(endedAt, timezone).time} ${note.replace(/\r?\n/g, " ")}`
+        [
+          `- ${formatZonedDateTime(endedAt, timezone).time} ${(note ?? "").replace(/\r?\n/g, " ")}`.trimEnd(),
+          ...saidTexts.map(
+            (text) => `  said: ${text.replace(/\r?\n/g, " ").slice(0, 200)}`
+          )
+        ].join("\n")
       );
     }
     let commit: string | undefined;

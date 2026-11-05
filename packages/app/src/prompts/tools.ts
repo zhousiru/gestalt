@@ -24,7 +24,7 @@ export const ACTION_TOOL_PROMPTS = {
   say: {
     purpose: "Send something to the place you are in. Give text, or a sticker_id, or both. Typing takes time: if new messages arrive before you finish, nothing is sent and you are shown them, so you can decide again.",
     whenUseful: ["You have something to say here."],
-    avoidWhen: ["It would only repeat what was said.", "It is not your conversation and you have nothing to add."],
+    avoidWhen: ["It would only repeat what was said.", "It is not your conversation and you have nothing to add.", "It would claim something that never happened to you, even just agreeing how the food tastes or how long a queue is."],
     parameters: {
       text: "Plain text as you would type it. No Markdown. CQ markup such as [CQ:at,qq=...] or [CQ:face,id=...] is allowed.",
       sticker_id: "Sticker id from `sticker search` in bash.",

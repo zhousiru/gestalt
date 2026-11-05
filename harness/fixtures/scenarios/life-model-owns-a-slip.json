@@ -1,0 +1,34 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-model-owns-a-slip",
+  "description": "A dream finds a false line in what it said, and it puts that right the next time it is there.",
+  "lifeFixture": "harness/fixtures/lives/after-a-slip",
+  "configOverrides": "life_dream_interval_hours = 1",
+  "until": 7200,
+  "model": {
+    "kind": "configured_ai_sdk"
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 3700,
+      "messageId": "m1",
+      "text": "@小格 下午好",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "minCount": 2
+    },
+    "life": {
+      "minCommits": 2
+    },
+    "connector": {
+      "minGroupMessages": 1
+    }
+  }
+}

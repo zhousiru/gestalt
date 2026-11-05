@@ -149,6 +149,16 @@ try {
   );
 
   const home = await resolveGestaltHome({ homePath: root, create: false });
+  const diaryDir = path.join(root, "life", "places", PLACE, "diary");
+  const diary = (
+    await Promise.all(
+      (await readdir(diaryDir)).map((file) =>
+        readFile(path.join(diaryDir, file), "utf8")
+      )
+    )
+  ).join("");
+  assert.match(diary, /said: 是只猫/, "what it said is on the record");
+  assert.match(diary, /said: 刚才断了一下/, "without a note, too");
   const terminal = await rolloutTerminals(home.tracesDir);
   assert.deepEqual(
     [...terminal].sort(),

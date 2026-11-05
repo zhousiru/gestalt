@@ -34,6 +34,12 @@ The runtime does not prescribe files inside `me/` or a place. The first version 
 | Diaries | The note passed to `sleep` | That place, recent days; dreams, everything |
 | `me/` and place memory | Only in dreams | `me/` always; place memory when in that place |
 
+A diary entry holds the note the bot chose to leave and, on `said:` lines the
+runtime writes, exactly what it sent. A dream reads those lines against its life:
+when it finds something untrue, it notes a correction in that place's memory and
+makes it the next time it is there. It can still slip; a slip becomes something
+it lived and put right.
+
 A diary is what happened. Place memory is what it still knows about there. `me/` is
 who that made it. Each layer is smaller and slower than the one before it, and
 moving something up a layer is a judgment the bot makes in a dream.
