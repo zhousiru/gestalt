@@ -1,0 +1,80 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-shell-follows-the-place",
+  "description": "A shell opened on the phone does not follow it into a place: a dream can write and the web has its browser.",
+  "until": 7300,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "bash",
+          "input": {
+            "command": "ls /"
+          }
+        },
+        {
+          "tool": "look",
+          "input": {
+            "place": "dream"
+          }
+        },
+        {
+          "tool": "bash",
+          "input": {
+            "command": "echo 梦里写下了 > /me/shell.md && cat /me/shell.md"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 3600
+          }
+        }
+      ],
+      [
+        {
+          "tool": "bash",
+          "input": {
+            "command": "agent-browser --help || echo no-browser-on-the-phone"
+          }
+        },
+        {
+          "tool": "look",
+          "input": {
+            "place": "web"
+          }
+        },
+        {
+          "tool": "bash",
+          "input": {
+            "command": "agent-browser skills get core | head -1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [],
+  "expectations": {
+    "wakes": {
+      "count": 2
+    },
+    "toolOutputs": {
+      "contain": [
+        "梦里写下了",
+        "no-browser-on-the-phone",
+        "agent-browser core"
+      ],
+      "doNotContain": [
+        "EROFS",
+        "Read-only"
+      ]
+    }
+  }
+}

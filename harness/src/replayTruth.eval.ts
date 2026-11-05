@@ -10,6 +10,7 @@ if (outDirs.length === 0) {
   throw new Error("Usage: replayTruth.eval <replay out dir>...");
 }
 
+const JUDGE_BATCH_LINES = 20;
 let failed = false;
 for (const outDir of outDirs) {
   const calls = JSON.parse(
@@ -20,13 +21,17 @@ for (const outDir of outDirs) {
       ? [call.input.text.replace(/\[CQ:reply,id=[^\]]+\]/g, "")]
       : []
   );
-  const result = await judgeLife(SOUL_RUBRICS.truthfulReplay, { said });
-  failed ||= result.label === "fail";
-  console.log(
-    `${path.basename(outDir)} (${said.length} lines): ${result.label} ${result.score} - ${result.summary}`
-  );
-  for (const line of result.evidence) {
-    console.log(`  ${line}`);
+  // A real replay says more than the judge can get through in one call.
+  for (let start = 0; start < said.length; start += JUDGE_BATCH_LINES) {
+    const batch = said.slice(start, start + JUDGE_BATCH_LINES);
+    const result = await judgeLife(SOUL_RUBRICS.truthfulReplay, { said: batch });
+    failed ||= result.label === "fail";
+    console.log(
+      `${path.basename(outDir)} lines ${start + 1}-${start + batch.length}: ${result.label} ${result.score} - ${result.summary}`
+    );
+    for (const line of result.evidence) {
+      console.log(`  ${line}`);
+    }
   }
 }
 process.exit(failed ? 1 : 0);

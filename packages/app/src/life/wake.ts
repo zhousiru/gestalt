@@ -178,6 +178,14 @@ export async function runWake(
     return bash;
   };
 
+  // The mounts are the rule, so going somewhere means a different shell. One
+  // opened on the phone must not follow it in.
+  const remount = async (mounts: WakeMounts): Promise<void> => {
+    await bash?.dispose();
+    bash = undefined;
+    bashMounts = mounts;
+  };
+
   const recordsOf = (target: Conversation): SessionEventRecord[] =>
     sessionStore.getEvents(target);
 
@@ -196,7 +204,7 @@ export async function runWake(
     await life.ensurePlace(placeId);
     place = placeId;
     conversation = target;
-    bashMounts = { kind: "place", place: placeId, chat: true };
+    await remount({ kind: "place", place: placeId, chat: true });
     rollout.setConversationKey(getConversationKey(target));
     sessionStore.pinConversation(target);
     dependencies.liveEvents?.publish("agent.run.started", {
@@ -272,7 +280,7 @@ export async function runWake(
 
   const enterWeb = async (): Promise<string> => {
     place = WEB_PLACE;
-    bashMounts = { kind: "place", place: WEB_PLACE, chat: false };
+    await remount({ kind: "place", place: WEB_PLACE, chat: false });
     rollout.setConversationKey("life:web");
     return renderPlaceView({
       place: WEB_PLACE,
@@ -288,7 +296,7 @@ export async function runWake(
 
   const enterDream = async (): Promise<string> => {
     place = DREAM_PLACE;
-    bashMounts = { kind: "dream" };
+    await remount({ kind: "dream" });
     rollout.setConversationKey("life:dream");
     return renderDreamOpening(
       life,
@@ -798,9 +806,6 @@ export async function runWake(
     const command = readString(args.command);
     if (!command) {
       return { output: { status: "failed", reason: "bash needs a command." } };
-    }
-    if (bash === undefined && place === undefined) {
-      bashMounts = { kind: "phone" };
     }
     const result = await shell().exec(command);
     return {
