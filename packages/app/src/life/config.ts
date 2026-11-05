@@ -6,6 +6,8 @@ export interface LifeConfig {
   minSleepSeconds: number;
   maxSleepSeconds: number;
   defaultSleepSeconds: number;
+  /** One wake at a time means one stuck command would stop its whole life. */
+  bashTimeoutSeconds: number;
   dreamIntervalHours: number;
   typingMsPerChar: number;
   typingMinMs: number;
@@ -30,6 +32,7 @@ export function readLifeConfig(config: GestaltConfig): LifeConfig {
     minSleepSeconds: read("life_min_sleep_seconds", 15),
     maxSleepSeconds: read("life_max_sleep_seconds", 8 * 60 * 60),
     defaultSleepSeconds: read("life_default_sleep_seconds", 10 * 60),
+    bashTimeoutSeconds: read("life_bash_timeout_seconds", 120),
     dreamIntervalHours: read("life_dream_interval_hours", 24),
     typingMsPerChar: read("life_typing_ms_per_char", 150),
     typingMinMs: read("life_typing_min_ms", 800),

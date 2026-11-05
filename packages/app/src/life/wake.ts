@@ -807,7 +807,10 @@ export async function runWake(
     if (!command) {
       return { output: { status: "failed", reason: "bash needs a command." } };
     }
-    const result = await shell().exec(command);
+    const result = await shell().exec(
+      command,
+      AbortSignal.timeout(config.bashTimeoutSeconds * 1000)
+    );
     return {
       output: {
         stdout: truncateText(result.stdout),

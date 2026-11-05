@@ -136,6 +136,10 @@ pnpm --filter @gestalt/harness run verify:wake-model
 ```
 
 ```bash
+pnpm --filter @gestalt/harness run verify:bash-timeout
+```
+
+```bash
 pnpm --filter @gestalt/harness run eval:life
 ```
 

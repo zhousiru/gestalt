@@ -13,7 +13,7 @@ to `openai-compatible`, the API-key environment variable defaults to
 ```toml
 main_model_provider = "openrouter"
 main_model_base_url = "https://openrouter.ai/api/v1"
-main_model_name = "deepseek/deepseek-v4-pro"
+main_model_name = "~deepseek/deepseek-flash-latest"
 main_model_api_key_env = "OPENROUTER_API_KEY"
 main_model_temperature = 1
 main_model_max_steps = 1000

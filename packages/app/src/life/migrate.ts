@@ -54,7 +54,15 @@ export async function migrateHomeToLife(
       continue;
     }
     const target = fileName.replace(/\.[^.]+$/, ".md");
-    await cp(path.join(home.personaDir, fileName), path.join(meDir, target));
+    // Personas were written for a tool that no longer exists.
+    await writeFile(
+      path.join(meDir, target),
+      (await readFile(path.join(home.personaDir, fileName), "utf8")).replaceAll(
+        "send_group_message",
+        "say"
+      ),
+      "utf8"
+    );
     meFiles.push(target);
   }
   await writeFile(

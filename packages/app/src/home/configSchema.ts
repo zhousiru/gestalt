@@ -91,6 +91,7 @@ export const gestaltConfigSchema = z
     life_min_sleep_seconds: positiveInteger.optional(),
     life_max_sleep_seconds: positiveInteger.optional(),
     life_default_sleep_seconds: positiveInteger.optional(),
+    life_bash_timeout_seconds: positiveInteger.optional(),
     life_dream_interval_hours: positiveInteger.optional(),
     life_typing_ms_per_char: nonNegativeInteger.optional(),
     life_typing_min_ms: nonNegativeInteger.optional(),

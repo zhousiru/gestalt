@@ -87,6 +87,7 @@ There is deliberately nothing here about probabilities, triggers, or aggregation
 | `life_min_sleep_seconds` | Shortest sleep, also used when someone is still waiting. | `15` |
 | `life_max_sleep_seconds` | Longest sleep. | `28800` |
 | `life_default_sleep_seconds` | Sleep used when a wake ends without choosing one. | `600` |
+| `life_bash_timeout_seconds` | How long one bash command may run. Wakes are serial, so a stuck command must not hold up the rest. | `120` |
 | `life_dream_interval_hours` | Longest time between dreams before one is forced. | `24` |
 | `life_typing_ms_per_char` | Time `say` takes per character. | `150` |
 | `life_typing_min_ms` | Shortest typing time. | `800` |

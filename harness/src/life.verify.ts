@@ -34,3 +34,5 @@ console.log(`${fixtures.length - failures}/${fixtures.length} fixtures passed`);
 if (failures > 0) {
   process.exitCode = 1;
 }
+// A browser daemon may keep inherited handles open after its wake is over.
+process.exit(process.exitCode ?? 0);

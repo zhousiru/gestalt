@@ -48,7 +48,7 @@
         {
           "tool": "bash",
           "input": {
-            "command": "agent-browser skills get core | head -1"
+            "command": "agent-browser skills get core"
           }
         },
         {

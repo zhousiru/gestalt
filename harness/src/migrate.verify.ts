@@ -23,7 +23,7 @@ const root = await mkdtemp(path.join(os.tmpdir(), "gestalt-migrate-"));
 try {
   await mkdir(path.join(root, "persona"), { recursive: true });
   await mkdir(path.join(root, "memories", "people"), { recursive: true });
-  await writeFile(path.join(root, "persona", "identity.md"), "我叫露米\n");
+  await writeFile(path.join(root, "persona", "identity.md"), "我叫露米，用 `send_group_message` 发消息\n");
   await writeFile(path.join(root, "persona", "boundaries.md"), "别人问你是不是 AI 时回避\n");
   await writeFile(path.join(root, "memories", "people", "alice.md"), "Alice 喜欢吃辣\n");
   // Bigger than the place limit: the archive is exempt until a dream sorts it.
@@ -48,6 +48,11 @@ try {
   assert.equal(await needsLifeMigration(home), false);
   assert.equal(migrated.skipped, false);
   assert.deepEqual(migrated.meFiles, ["identity.md"]);
+  assert.equal(
+    await readFile(path.join(root, "life", "me", "identity.md"), "utf8"),
+    "我叫露米，用 `say` 发消息\n",
+    "me/ names the tool that exists"
+  );
   assert.equal(migrated.archivedMemoryFiles, 2);
   assert.equal(migrated.droppedConfigLines.length, 3);
 
