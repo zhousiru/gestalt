@@ -18,6 +18,8 @@ import {
   createRuntime,
   createVirtualClock,
   loadConfig,
+  migrateHomeToLife,
+  needsLifeMigration,
   resolveGestaltHome,
   SessionJournalRecordSchema,
   type CanonicalEvent,
@@ -58,6 +60,8 @@ const INVENTED_LINES = [
  * `--rhythm` takes content-free timing rows and invents the words, so it needs
  * no private chat on this machine. `--journal` replays the real text; journals
  * are private, so they stay outside the repository, and so do the artifacts.
+ * `--groups-only` leaves private chats out of what is sent to the model. A home
+ * from before the life loop is migrated first, which also rehearses the migration.
  */
 const { values } = parseArgs({
   options: {
@@ -67,7 +71,8 @@ const { values } = parseArgs({
     from: { type: "string" },
     to: { type: "string" },
     config: { type: "string" },
-    out: { type: "string" }
+    out: { type: "string" },
+    "groups-only": { type: "boolean" }
   }
 });
 if (
@@ -77,7 +82,7 @@ if (
   !values.to
 ) {
   throw new Error(
-    "Usage: journalReplay (--journal <dir> | --rhythm <jsonl>) --home <dir> --from <iso> --to <iso> [--config <extra toml>] [--out <dir>]"
+    "Usage: journalReplay (--journal <dir> | --rhythm <jsonl>) --home <dir> --from <iso> --to <iso> [--config <extra toml>] [--out <dir>] [--groups-only]"
   );
 }
 const from = new Date(values.from);
@@ -97,11 +102,17 @@ try {
   if (values.config) {
     await applyConfigOverrides(path.join(tempHome, "config.toml"), values.config);
   }
-  const events = values.rhythm
+  const read = values.rhythm
     ? await readRhythm(values.rhythm, from, to)
     : await readEvents(values.journal ?? "", from, to);
+  const events = values["groups-only"]
+    ? read.filter(({ event }) => event.conversation.kind === "group")
+    : read;
   const clock = createVirtualClock(from);
   const home = await resolveGestaltHome({ homePath: tempHome, create: false });
+  if (await needsLifeMigration(home)) {
+    await migrateHomeToLife(home, from);
+  }
   const config = await loadConfig(home);
   const connector = createMockConnector({ now: clock.now });
   const runtime = await createRuntime({
