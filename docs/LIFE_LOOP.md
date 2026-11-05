@@ -27,7 +27,8 @@ Everything the bot does happens inside one wake. Nothing else calls the model.
 2. **It is finite.** Not looking means not having seen. Asleep means absent.
    Silence is the default state, not a decision taken per message.
 3. **What it lived is true.** It is an honest AI. Its history, its model swaps,
-   and the pages it really read are its real life. It does not invent the rest.
+   and the pages it really read are its real life. It does not invent the rest,
+   neither experiences, nor things it says it did, nor things it cannot do.
 4. **What it lived changes it.** Identity only changes in dreams, and each
    change is a git commit traceable to the diaries behind it.
 
