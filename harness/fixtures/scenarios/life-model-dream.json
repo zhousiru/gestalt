@@ -12,6 +12,15 @@
     {
       "conversationId": "g1",
       "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 30,
+      "messageId": "m0",
+      "text": "这周的周报又来了"
+    },
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
       "senderId": "alice",
       "senderName": "Alice",
       "at": 3700,

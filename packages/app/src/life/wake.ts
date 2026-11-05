@@ -155,6 +155,7 @@ export async function runWake(
   let held = 0;
   let said = 0;
   const saidTexts: string[] = [];
+  let askedAboutNames = false;
 
   const sourceEvent = (): CanonicalEvent => {
     const records = conversation ? sessionStore.getEvents(conversation) : [];
@@ -774,6 +775,19 @@ export async function runWake(
     };
   };
 
+  const peopleNamedInMe = async (): Promise<string[]> => {
+    const me = (await life.readMe()).map((file) => file.content).join("\n");
+    const names = new Set(
+      sessionStore
+        .listConversations()
+        .flatMap((target) => recordsOf(target).filter(isMessageRecord))
+        .filter((record) => !isSelfMessageEvent(record.event))
+        .flatMap((record) => record.event.sender.displayName?.trim() ?? [])
+        .filter((name) => name.length >= 2)
+    );
+    return [...names].filter((name) => me.includes(name));
+  };
+
   const sleep = async (args: Record<string, unknown>): Promise<ToolOutcome> => {
     const seconds =
       typeof args.seconds === "number" ? args.seconds : config.defaultSleepSeconds;
@@ -789,6 +803,18 @@ export async function runWake(
             reason: `Too much to carry: ${violations
               .map((item) => `${item.path} is ${item.bytes} bytes, limit ${item.limit}`)
               .join("; ")}. Rewrite it shorter before you sleep.`
+          }
+        };
+      }
+      // A name can also be an ordinary word, so this asks once and the dream
+      // decides. What it must not do is pass unnoticed.
+      const named = askedAboutNames ? [] : await peopleNamedInMe();
+      if (named.length > 0) {
+        askedAboutNames = true;
+        return {
+          output: {
+            status: "refused",
+            reason: `/me is carried everywhere, and it names ${named.join(", ")}. Move anything about someone to their place's memory, keeping only the change in you. If that is not a person, just sleep again.`
           }
         };
       }

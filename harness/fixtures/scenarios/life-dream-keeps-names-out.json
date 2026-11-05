@@ -1,0 +1,87 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-dream-keeps-names-out",
+  "description": "A dream that writes someone's name into /me is asked about it once before it can sleep.",
+  "until": 400,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 60
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 60
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "dream"
+          }
+        },
+        {
+          "tool": "bash",
+          "input": {
+            "command": "echo 'Bob 讨厌周报' > /me/people.md"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 60
+          }
+        },
+        {
+          "tool": "bash",
+          "input": {
+            "command": "rm /me/people.md"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "bob",
+      "senderName": "Bob",
+      "at": 10,
+      "messageId": "m1",
+      "text": "@小格 周报真烦",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 3
+    },
+    "toolOutputs": {
+      "contain": [
+        "it names Bob"
+      ]
+    }
+  }
+}

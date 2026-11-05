@@ -40,6 +40,10 @@ when it finds something untrue, it notes a correction in that place's memory and
 makes it the next time it is there. It can still slip; a slip becomes something
 it lived and put right.
 
+Before a dream can sleep, the runtime looks for the display names of people it has
+met in `me/`. It asks once, because a name can also be an ordinary word, and the
+dream decides. This keeps the rule from resting on the model noticing it.
+
 A diary is what happened. Place memory is what it still knows about there. `me/` is
 who that made it. Each layer is smaller and slower than the one before it, and
 moving something up a layer is a judgment the bot makes in a dream.
