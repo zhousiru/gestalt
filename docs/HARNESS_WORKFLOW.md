@@ -144,6 +144,10 @@ pnpm --filter @gestalt/harness run eval:soul
 ```
 
 ```bash
+pnpm --filter @gestalt/harness run eval:replay-truth <replay out dir>
+```
+
+```bash
 pnpm --filter @gestalt/harness run eval:stickers
 ```
 

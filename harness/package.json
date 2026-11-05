@@ -29,6 +29,7 @@
     "eval": "tsx src/eval.ts && tsx src/onebotProtocol.eval.ts",
     "eval:life": "tsx src/eval.ts",
     "eval:soul": "tsx src/soul.eval.ts",
+    "eval:replay-truth": "tsx src/replayTruth.eval.ts",
     "replay:journal": "tsx src/journalReplay.ts",
     "eval:onebot": "tsx src/onebotProtocol.eval.ts",
     "eval:stickers": "tsx src/stickersSocial.eval.ts",
