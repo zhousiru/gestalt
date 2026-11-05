@@ -146,7 +146,7 @@ try {
     child.kill();
     await new Promise<void>((resolve) => child.once("close", () => resolve()));
   }
-  await rm(tempHome, { recursive: true, force: true });
+  await rm(tempHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 if (stderr) {
