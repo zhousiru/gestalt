@@ -219,6 +219,16 @@ function createAiSdkModelSession(
       };
       let stopRequested = false;
       let toolTail: Promise<unknown> = Promise.resolve();
+      // prepareStep only changes the request it was called for, so what the
+      // model has seen goes back into every later request at the same place.
+      const shownImages: Array<{ at: number; message: ModelMessage }> = [];
+      const withShownImages = (messages: ModelMessage[]): ModelMessage[] => {
+        const restored = [...messages];
+        for (const { at, message } of [...shownImages].reverse()) {
+          restored.splice(at, 0, message);
+        }
+        return restored;
+      };
 
       // Models may emit several tool calls in one step. A life happens in order,
       // so they run one after another, and nothing runs after sleep.
@@ -264,14 +274,11 @@ function createAiSdkModelSession(
         ],
         temperature,
         prepareStep({ messages: stepMessages }) {
-          if (pendingImages.length === 0) {
-            return undefined;
-          }
-          const images = pendingImages.splice(0, pendingImages.length);
-          return {
-            messages: [
-              ...stepMessages,
-              {
+          if (pendingImages.length > 0) {
+            const images = pendingImages.splice(0, pendingImages.length);
+            shownImages.push({
+              at: stepMessages.length,
+              message: {
                 role: "user",
                 content: images.flatMap((image) => [
                   { type: "text" as const, text: image.label },
@@ -282,8 +289,11 @@ function createAiSdkModelSession(
                   }
                 ])
               }
-            ]
-          };
+            });
+          }
+          return shownImages.length > 0
+            ? { messages: withShownImages(stepMessages) }
+            : undefined;
         },
         include: {
           requestBody: true,
@@ -352,11 +362,15 @@ function createAiSdkModelSession(
         if (!stopRequested && first.steps.length < input.maxSteps) {
           // Not every provider accepts a required tool choice, and a model that
           // simply stops has not decided anything. It gets one chance to.
-          await generate([
+          const lived = withShownImages([
             opening,
             ...first.steps
               .flatMap((step) => step.response.messages)
-              .filter(hasContent),
+              .filter(hasContent)
+          ]);
+          shownImages.length = 0;
+          await generate([
+            ...lived,
             { role: "user", content: input.unfinished.content }
           ]);
         }

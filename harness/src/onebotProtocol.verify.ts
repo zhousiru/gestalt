@@ -16,12 +16,21 @@ const transcriptText = result.modelRequests
   .flatMap((request) =>
     request.messages.map((message) => modelContentText(message.content))
   )
-  .join("\n");
+  .join("\n")
+  // Tool results arrive here as JSON, which doubles the backslashes of a path.
+  .replaceAll("\\\\", "\\");
 const modelFacingWindows = result.modelRequests
   .flatMap((request) => request.messages)
+  // The chat is what look returned, not what the model later said about it.
+  .filter((message) => message.role === "tool")
   .map((message) => modelContentText(message.content))
   .filter((content) => content.includes("小格看看这张图"));
 
+assert.deepEqual(
+  result.wakes.filter((wake) => wake.status === "failed"),
+  [],
+  "no wake may fail on the way to the reply"
+);
 assert.ok(conversation, "expected exported OneBot session conversation");
 assert.ok(turn, "expected OneBot e2e to complete one agent turn");
 assert.equal(result.event.conversation.kind, "group");

@@ -66,6 +66,7 @@ interface FakeOneBotServer {
 }
 
 const RUN_ID = "onebot-protocol-e2e";
+const REPLY_DEADLINE_MS = 180_000;
 
 export async function runOneBotProtocolE2E(): Promise<OneBotProtocolRunResult> {
   const repoRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -108,8 +109,23 @@ export async function runOneBotProtocolE2E(): Promise<OneBotProtocolRunResult> {
     runtime.startLife();
     await runtime.loop.whenQuiescent();
     fakeOneBot.sendEvent(createOneBotGroupMessageEvent());
-    await fakeOneBot.waitForApiCall("send_group_msg");
-    await runtime.shutdown();
+    try {
+      await withinDeadline(
+        fakeOneBot.waitForApiCall("send_group_msg"),
+        () =>
+          `Nothing was sent within ${REPLY_DEADLINE_MS / 1000}s. Wakes: ${JSON.stringify(
+            runtime.loop.wakes.map(({ reason, place, status, said, error }) => ({
+              reason,
+              place,
+              status,
+              said,
+              error
+            }))
+          )}`
+      );
+    } finally {
+      await runtime.shutdown();
+    }
     const wakes = runtime.loop.wakes;
     if (!canonicalEvent) {
       throw new Error("OneBot protocol run did not produce a canonical event.");
@@ -157,6 +173,27 @@ export async function runOneBotProtocolE2E(): Promise<OneBotProtocolRunResult> {
   } finally {
     await fakeOneBot.close();
     await rm(tempHome, { recursive: true, force: true });
+  }
+}
+
+/** A bot may stay silent and sleep for hours, so a run has to stop waiting. */
+async function withinDeadline<T>(
+  work: Promise<T>,
+  describe: () => string
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(describe())),
+          REPLY_DEADLINE_MS
+        );
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

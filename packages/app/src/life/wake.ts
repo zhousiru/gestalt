@@ -129,6 +129,7 @@ export async function runWake(
   const id = randomUUID();
   const startedAt = clock.now().toISOString();
   const lastDreamAtStart = state.lastDreamAt;
+  const lastReadAtStart = { ...state.lastRead };
   const proposals: ActionProposal[] = [];
   const toolResults: ToolExecutionResult[] = [];
   const windowIds: string[] = [];
@@ -916,6 +917,11 @@ export async function runWake(
   async function finishWake(): Promise<WakeResult> {
     const wasDream = place === DREAM_PLACE;
     let reverted = false;
+    // A wake that broke before it answered has not really read anything, or a
+    // call it never got to would look handled forever.
+    if (status === "failed" && said === 0) {
+      state.lastRead = lastReadAtStart;
+    }
     if (wasDream) {
       const violations = await life.findSizeViolations({
         meMaxBytes: config.meMaxBytes,

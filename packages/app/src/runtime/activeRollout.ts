@@ -91,7 +91,8 @@ export function createActiveRollout(
       return Promise.reject(new Error("Active rollout is already closed."));
     }
     const result = operationTail.then(async () => operation(await writerPromise));
-    operationTail = result;
+    // The caller sees its own failure. The rollout must still be able to close.
+    operationTail = result.catch(() => undefined);
     return result;
   };
 

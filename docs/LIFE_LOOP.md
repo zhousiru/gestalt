@@ -48,6 +48,10 @@ or exit condition. A vibration wakes it unless it chose `do_not_disturb`, or the
 day's budget is spent. When a wake ends while someone is still waiting, the
 requested sleep is shortened to the minimum so it notices soon.
 
+A wake that breaks before it said anything has not read anything: unread and
+calls stay as they were, and the next wake comes after a growing backoff. Once it
+has spoken, what it read stays read, so a retry cannot answer the same call twice.
+
 ## Places
 
 A place is where a wake can go:

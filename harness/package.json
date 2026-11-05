@@ -9,6 +9,7 @@
     "verify": "tsx src/life.verify.ts",
     "verify:life": "tsx src/life.verify.ts",
     "verify:migrate": "tsx src/migrate.verify.ts",
+    "verify:wake-model": "tsx src/wakeModel.verify.ts",
     "verify:soul": "tsx src/soul.eval.ts",
     "verify:inspect": "tsx src/inspect.verify.ts",
     "verify:onebot": "tsx src/onebotProtocol.verify.ts",
