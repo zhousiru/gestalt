@@ -305,6 +305,7 @@ function readLanguageProviderOptions(
 ): ModelProviderOptions | undefined {
   const routing = readLanguageRouting(config, role);
   const thinking = readLanguageString(config, role, "thinking");
+  const reasoningEffort = readLanguageString(config, role, "reasoning_effort");
   const providerOptions: {
     [key: string]: ModelJsonValue | undefined;
   } = {};
@@ -314,6 +315,9 @@ function readLanguageProviderOptions(
   }
   if (thinking) {
     providerOptions.thinking = { type: thinking };
+  }
+  if (reasoningEffort) {
+    providerOptions.reasoning = { effort: reasoningEffort };
   }
 
   return Object.keys(providerOptions).length > 0

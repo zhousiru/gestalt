@@ -21,6 +21,7 @@ const roleConfig = createConfig({
   main_model_routing_order: "first, second",
   main_model_routing_allow_fallbacks: false,
   main_model_thinking: "disabled",
+  main_model_reasoning_effort: "high",
   main_model_tool_choice: "auto",
   main_model_prompt_cache_enabled: false,
   main_model_prompt_cache_ttl: "1h",
@@ -60,7 +61,8 @@ assert.deepEqual(mainModel.providerOptions, {
       order: ["first", "second"],
       allow_fallbacks: false
     },
-    thinking: { type: "disabled" }
+    thinking: { type: "disabled" },
+    reasoning: { effort: "high" }
   }
 });
 
@@ -240,6 +242,38 @@ try {
   assert.equal(directLanguageModel.apiKey, "fixture-inline-main-key");
   assert.equal(directLanguageModel.apiKeyEnv, undefined);
 
+  const chatRequests: Array<Record<string, unknown>> = [];
+  const effortModel = createLanguageModelFromConfig(roleConfig, {
+    fetch: async (_input, init) => {
+      chatRequests.push(JSON.parse(String(init?.body ?? "{}")));
+      return new Response(
+        JSON.stringify({
+          id: "fixture",
+          created: 0,
+          model: "fixture/main",
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: { role: "assistant", content: "ok" }
+            }
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+  });
+  await (
+    effortModel.languageModel as unknown as {
+      doGenerate(options: unknown): Promise<unknown>;
+    }
+  ).doGenerate({
+    prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    providerOptions: mainModel.providerOptions
+  });
+  assert.deepEqual(chatRequests[0]?.reasoning, { effort: "high" });
+
   const embeddingClient = createEmbeddingClientFromConfig(roleConfig, {
     maxRetries: 0,
     fetch: createEmbeddingFetch(embeddingRequests, [0.1, 0.2, 0.3])
@@ -350,6 +384,7 @@ await writeFile(
     `- Embedding: ${embeddingModel.providerName}/${embeddingModel.modelName}`,
     `- Dimensions: ${embeddingModel.dimensions}`,
     "- Sub inheritance: verified field-by-field",
+    "- Reasoning effort reaches the chat request body: verified",
     "- Structured-output provider capability: opt-in verified",
     "- Direct and environment API-key sources: verified for all model roles",
     "- Legacy runtime model keys are not resolved: verified",

@@ -40,6 +40,7 @@ function languageModelFields(
     [`${prefix}_routing_allow_fallbacks`]: z.boolean().optional(),
     [`${prefix}_routing_sort`]: routingSort.optional(),
     [`${prefix}_thinking`]: clearableString.optional(),
+    [`${prefix}_reasoning_effort`]: clearableString.optional(),
     [`${prefix}_tool_choice`]: toolChoice.optional(),
     [`${prefix}_prompt_cache_enabled`]: z.boolean().optional(),
     [`${prefix}_prompt_cache_ttl`]: promptCacheTtl.optional()

@@ -58,6 +58,7 @@ routing_order
 routing_allow_fallbacks
 routing_sort
 thinking
+reasoning_effort
 tool_choice
 prompt_cache_enabled
 prompt_cache_ttl

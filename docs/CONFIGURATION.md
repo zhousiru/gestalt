@@ -35,7 +35,8 @@ Both prefixes support these suffixes:
 | `routing_order` | Comma-separated provider routing preference; an empty string clears inherited sub-model routing. | — |
 | `routing_allow_fallbacks` | Allow providers outside `routing_order`. | Provider default |
 | `routing_sort` | `price`, `throughput`, `latency`, or an empty string. | Provider default |
-| `thinking` | Provider-specific thinking mode; an empty string disables the override. | Provider default |
+| `thinking` | DeepSeek-style `thinking: { type }` field. OpenRouter's unified API ignores it; use `reasoning_effort` there. An empty string disables the override. | Provider default |
+| `reasoning_effort` | Sent as `reasoning: { effort }`, the OpenRouter form. Values depend on the model; check its supported efforts. An empty string disables the override. | Provider default |
 | `tool_choice` | `required`, `auto`, `none`, or an empty string. Leave unset or use `auto` unless the provider accepts `required`; a wake that stops without `sleep` is nudged once either way. | Provider default |
 | `prompt_cache_enabled` | Enable provider prompt caching. | Provider-dependent |
 | `prompt_cache_ttl` | `5m`, `1h`, or an empty string. | Provider default |
