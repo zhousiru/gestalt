@@ -65,6 +65,10 @@ A place is where a wake can go:
 | `web` | Its own corner of the internet. |
 | `dream` | Sorting through what happened. |
 
+A chat it has read stays reachable however long it is quiet. The phone lists it
+from `lastRead`, not from recent history, and entering it restores its last
+messages from the journal.
+
 A wake enters at most one place, once. This is the privacy boundary and it is
 structural: a model context only ever holds one place's content. `say` has no
 target parameter, so it can only reach the place the wake is in.

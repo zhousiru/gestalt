@@ -6,7 +6,7 @@ import type {
 import type { SessionEventRecord } from "../session/schemas";
 import type { SessionStore } from "../session/store";
 import type { LifeState } from "./state";
-import { placeIdForConversation } from "./places";
+import { conversationIdFromPlace, placeIdForConversation } from "./places";
 
 export interface PhonePlace {
   place: string;
@@ -94,6 +94,27 @@ export function readPhone(input: {
       unread: unread.length,
       called: unread.some((record) => isCallingBot(record, records)),
       ...(last ? { lastMessageAt: last.receivedAt } : {})
+    });
+  }
+  // The session store only holds recent history, but a chat it has read stays a
+  // chat it knows, however long that chat has been quiet.
+  for (const [place, lastRead] of Object.entries(input.state.lastRead)) {
+    const conversation = conversationIdFromPlace(place);
+    if (
+      !conversation ||
+      places.some((entry) => entry.place === place) ||
+      (conversation.kind === "group" &&
+        input.allowedGroupIds &&
+        !input.allowedGroupIds.has(conversation.id))
+    ) {
+      continue;
+    }
+    places.push({
+      place,
+      conversation,
+      unread: 0,
+      called: false,
+      lastMessageAt: lastRead.at
     });
   }
   places.sort((left, right) =>

@@ -49,13 +49,13 @@ import { isMessageRecord, readPhone, selectUnreadRecords } from "./phone";
 import {
   DREAM_PLACE,
   WEB_PLACE,
-  conversationIdFromPlace,
   placeIdForConversation
 } from "./places";
 import type { LifeState } from "./state";
 import type { LifeStore } from "./store";
 
 const MAX_HOLDS_PER_WAKE = 2;
+const QUIET_CHAT_RESTORE_MS = 7 * 86_400_000;
 const MAX_INLINE_DIARY_CHARS = 16_000;
 const SEARCH_LOOKBACK_DAYS = 180;
 const SEARCH_RESULT_LIMIT = 20;
@@ -200,6 +200,28 @@ export async function runWake(
     }
   };
 
+  /**
+   * A chat quiet past the recent history is empty in memory. What it last read
+   * is in the journal, and saying anything needs those messages back.
+   */
+  const restoreQuietChat = async (
+    target: Conversation,
+    lastRead: LifeState["lastRead"][string] | undefined
+  ): Promise<void> => {
+    if (!lastRead || recordsOf(target).length > 0) {
+      return;
+    }
+    const since = new Date(Date.parse(lastRead.at) - QUIET_CHAT_RESTORE_MS);
+    const records = await dependencies.sessionHistory.recentMessages(
+      target,
+      since,
+      config.contextMessageCount
+    );
+    for (const record of records) {
+      sessionStore.hydrateEvent(record);
+    }
+  };
+
   const enterChat = async (target: Conversation): Promise<string> => {
     const placeId = placeIdForConversation(target);
     await life.ensurePlace(placeId);
@@ -208,6 +230,7 @@ export async function runWake(
     await remount({ kind: "place", place: placeId, chat: true });
     rollout.setConversationKey(getConversationKey(target));
     sessionStore.pinConversation(target);
+    await restoreQuietChat(target, state.lastRead[placeId]);
     dependencies.liveEvents?.publish("agent.run.started", {
       traceId: id,
       conversationKey: getConversationKey(target),
@@ -534,23 +557,11 @@ export async function runWake(
   };
 
   const findConversation = (placeId: string): Conversation | undefined => {
-    const identity = conversationIdFromPlace(placeId);
-    if (!identity) {
-      return undefined;
-    }
-    if (
-      identity.kind === "group" &&
-      dependencies.allowedGroupIds &&
-      !dependencies.allowedGroupIds.has(identity.id)
-    ) {
-      return undefined;
-    }
-    return sessionStore
-      .listConversations()
-      .find(
-        (candidate) =>
-          candidate.kind === identity.kind && candidate.id === identity.id
-      );
+    return readPhone({
+      sessionStore,
+      state,
+      allowedGroupIds: dependencies.allowedGroupIds
+    }).places.find((entry) => entry.place === placeId)?.conversation;
   };
 
   /** Runs a visible effect across the durable outbound boundary. */
@@ -1108,6 +1119,9 @@ async function buildWakeOpening(
             }
           : {})
       })),
+    quietChats: phone.places
+      .filter((entry) => entry.unread === 0 && !entry.called)
+      .map((entry) => entry.place),
     web: [...memory.map((file) => file.content), diary]
       .filter((value) => value.trim())
       .join("\n"),

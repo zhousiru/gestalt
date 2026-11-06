@@ -54,11 +54,13 @@ const wake = renderWakePrompt({
   phone: [
     { place: "group-1", kind: "group", name: "群", unread: 3, called: true }
   ],
+  quietChats: ["group-2", "private-3"],
   web: "",
   emojis: ["赞"]
 });
 assert.equal(wake.id, "runtime.life.wake");
 assert.match(wake.content, /3 unread, someone called you/);
+assert.match(wake.content, /Quiet chats you can open: group-2, private-3/);
 
 const dream = renderDreamPrompt({
   lastDream: "1 day ago",

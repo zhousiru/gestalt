@@ -88,6 +88,7 @@ export interface WakePromptInput {
   budgetLeftPercent: number;
   lastDream: string;
   phone: readonly WakePhoneLine[];
+  quietChats: readonly string[];
   web: string;
   emojis: readonly string[];
 }
@@ -114,6 +115,9 @@ export function renderWakePrompt(input: WakePromptInput): RenderedPrompt {
       "",
       "Your phone:",
       ...(phone.length > 0 ? phone : ["- nothing"]),
+      ...(input.quietChats.length > 0
+        ? ["", `Quiet chats you can open: ${input.quietChats.join(", ")}`]
+        : []),
       "",
       "Other places you can go: web (read things you care about), dream (sort out what has been happening).",
       "",

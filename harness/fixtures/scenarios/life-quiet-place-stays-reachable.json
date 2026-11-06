@@ -1,0 +1,126 @@
+{
+  "start": "2026-11-05T06:00:00.000Z",
+  "id": "life-quiet-place-stays-reachable",
+  "description": "A chat it has been to stays on its phone after a restart outlives the recent history, and it can go back and speak there.",
+  "configOverrides": "session_recent_history_hours = 1\n",
+  "restarts": [
+    7200
+  ],
+  "until": 9000,
+  "model": {
+    "kind": "scripted",
+    "wakes": [
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "在的"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 8000
+          }
+        }
+      ],
+      [
+        {
+          "tool": "look",
+          "input": {
+            "place": "group-g1"
+          }
+        },
+        {
+          "tool": "say",
+          "input": {
+            "text": "我回来看看"
+          }
+        },
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ],
+      [
+        {
+          "tool": "sleep",
+          "input": {
+            "seconds": 7200
+          }
+        }
+      ]
+    ]
+  },
+  "events": [
+    {
+      "conversationId": "g1",
+      "conversationName": "测试群",
+      "senderId": "alice",
+      "senderName": "Alice",
+      "at": 600,
+      "messageId": "m1",
+      "text": "@小格 在吗",
+      "mentionsBot": true
+    }
+  ],
+  "expectations": {
+    "wakes": {
+      "count": 4,
+      "reasons": [
+        "boot",
+        "vibration",
+        "timer",
+        "timer"
+      ],
+      "places": [
+        "phone",
+        "group-g1",
+        "group-g1",
+        "phone"
+      ],
+      "statuses": [
+        "completed",
+        "completed",
+        "completed",
+        "completed"
+      ]
+    },
+    "connector": {
+      "groupMessages": 2,
+      "textsInclude": [
+        "在的",
+        "我回来看看"
+      ],
+      "groupIds": [
+        "g1",
+        "g1"
+      ]
+    },
+    "modelInput": {
+      "contains": [
+        "Quiet chats you can open: group-g1",
+        "@小格 在吗"
+      ],
+      "doesNotContain": [
+        "There is no place called"
+      ]
+    }
+  }
+}
