@@ -166,7 +166,7 @@ Current reading boundary:
 
 Two transport modes exist:
 
-- `forward_ws`: Gestalt connects to a OneBot WebSocket server.
+- `forward_ws`: Gestalt connects to a OneBot WebSocket server. A connection lost while running is reported once as `connection_lost` and retried with backoff up to 5 seconds until it returns, because NapCat's server disappears for as long as QQ is logged out. Only the first connection at startup may fail the process.
 - `reverse_ws`: Gestalt opens a WebSocket server and waits for the OneBot implementation to connect.
 
 Both modes use OneBot's `echo` field to correlate API calls with responses.

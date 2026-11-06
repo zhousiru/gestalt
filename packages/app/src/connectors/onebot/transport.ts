@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import WebSocket, { WebSocketServer } from "ws";
 import {
   ConnectorOutcomeUnknownError,
@@ -14,7 +15,8 @@ import {
 
 export type OneBotEventFailureCode =
   | OneBotIngressFailure<unknown>["code"]
-  | "invalid_message";
+  | "invalid_message"
+  | "connection_lost";
 
 export interface OneBotEventFailure {
   code: OneBotEventFailureCode;
@@ -47,6 +49,8 @@ export interface CreateOneBotForwardWsTransportOptions
   url: string;
   accessToken?: string;
   connectTimeoutMs?: number;
+  reconnectMinMs?: number;
+  reconnectMaxMs?: number;
 }
 
 export interface CreateOneBotReverseWsTransportOptions
@@ -79,6 +83,67 @@ export function createOneBotForwardWsTransport(
     eventErrorHandlers,
     options
   );
+  const stopReconnecting = new AbortController();
+
+  // Listening starts before the socket opens: NapCat pushes what it held back
+  // the moment a client connects, and a message with no listener is gone.
+  const listen = (opening: WebSocket): void => {
+    opening.on("message", (data) => {
+      handleIncoming(data, pending, ingress, eventErrorHandlers);
+    });
+  };
+
+  const attach = (connected: WebSocket): void => {
+    socket = connected;
+    connected.on("close", () => {
+      rejectPending(
+        pending,
+        unknownOutcome(
+          "OneBot WebSocket closed before action results arrived."
+        )
+      );
+      if (socket === connected && !stopReconnecting.signal.aborted) {
+        socket = undefined;
+        void reconnect();
+      }
+    });
+    connected.on("error", (error) => {
+      rejectPending(
+        pending,
+        unknownOutcome(
+          "OneBot WebSocket failed before action results arrived.",
+          error
+        )
+      );
+    });
+  };
+
+  /** A connection lost while running comes back by itself, however long it takes. */
+  const reconnect = async (): Promise<void> => {
+    const lostAt = Date.now();
+    reportEventFailure(eventErrorHandlers, {
+      code: "connection_lost",
+      error: new Error(`OneBot WebSocket closed: ${options.url}`)
+    });
+    const maxDelay = options.reconnectMaxMs ?? 5_000;
+    let delay = options.reconnectMinMs ?? 500;
+    while (!stopReconnecting.signal.aborted) {
+      try {
+        await sleep(delay, undefined, { signal: stopReconnecting.signal });
+        const connected = await openClientWebSocket(options, listen);
+        if (stopReconnecting.signal.aborted) {
+          connected.close();
+          return;
+        }
+        attach(connected);
+        const seconds = Math.round((Date.now() - lostAt) / 1000);
+        console.log(`[onebot connection] reconnected after ${seconds}s`);
+        return;
+      } catch {
+        delay = Math.min(delay * 2, maxDelay);
+      }
+    }
+  };
 
   return {
     mode: "forward_ws",
@@ -87,27 +152,7 @@ export function createOneBotForwardWsTransport(
       if (socket && socket.readyState === WebSocket.OPEN) {
         return;
       }
-      socket = await openClientWebSocket(options);
-      socket.on("message", (data) => {
-        handleIncoming(data, pending, ingress, eventErrorHandlers);
-      });
-      socket.on("close", () => {
-        rejectPending(
-          pending,
-          unknownOutcome(
-            "OneBot WebSocket closed before action results arrived."
-          )
-        );
-      });
-      socket.on("error", (error) => {
-        rejectPending(
-          pending,
-          unknownOutcome(
-            "OneBot WebSocket failed before action results arrived.",
-            error
-          )
-        );
-      });
+      attach(await openClientWebSocket(options, listen));
     },
 
     async callAction(action, params) {
@@ -134,6 +179,7 @@ export function createOneBotForwardWsTransport(
     },
 
     async [Symbol.asyncDispose]() {
+      stopReconnecting.abort();
       rejectPending(
         pending,
         unknownOutcome(
@@ -276,13 +322,15 @@ export function createOneBotReverseWsTransport(
 }
 
 async function openClientWebSocket(
-  options: CreateOneBotForwardWsTransportOptions
+  options: CreateOneBotForwardWsTransportOptions,
+  listen: (socket: WebSocket) => void
 ): Promise<WebSocket> {
   const headers =
     options.accessToken !== undefined
       ? { Authorization: `Bearer ${options.accessToken}` }
       : undefined;
   const socket = new WebSocket(options.url, headers ? { headers } : {});
+  listen(socket);
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
